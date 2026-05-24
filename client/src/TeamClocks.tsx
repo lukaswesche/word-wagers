@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { useTick } from './useTick';
+import { playSound, vibrate } from './useSound';
 import {
   TEAM_COLORS,
   formatClock,
@@ -11,10 +13,18 @@ type Props = {
   room: RoomState;
 };
 
+/** Return the live remaining ms for a clock. */
+function liveRemaining(clock: TeamClock): number {
+  if (clock.runningSince === null) return clock.remainingMs;
+  return Math.max(0, clock.remainingMs - (Date.now() - clock.runningSince));
+}
+
 /**
  * Side-by-side chess-clock display for both teams. Only one clock is running
  * at a time (the team currently on the clock). The active clock pulses;
  * paused clocks are dimmed. Color shifts at low time remaining.
+ *
+ * Plays an alarm beep every second when the active clock is ≤ 10 s.
  */
 function TeamClocks({ room }: Props) {
   // Tick to recompute remaining ms; 250ms is smooth enough for M:SS display.
@@ -23,6 +33,26 @@ function TeamClocks({ room }: Props) {
   const { teamClocks } = room;
   const redName = room.teamNames.red;
   const blueName = room.teamNames.blue;
+
+  // --- 10-second alarm ---
+  const lastBeepSecRef = useRef<number | null>(null);
+  const activeClock = teamClocks.red.runningSince !== null
+    ? teamClocks.red
+    : teamClocks.blue.runningSince !== null
+      ? teamClocks.blue
+      : null;
+
+  useEffect(() => {
+    if (!activeClock) { lastBeepSecRef.current = null; return; }
+    const ms = liveRemaining(activeClock);
+    const sec = Math.ceil(ms / 1000);
+    if (sec <= 10 && sec > 0 && sec !== lastBeepSecRef.current) {
+      lastBeepSecRef.current = sec;
+      playSound('timer_warn');
+      if (sec <= 3) vibrate(120);
+    }
+    if (sec > 10) lastBeepSecRef.current = null;
+  });
 
   return (
     <div
@@ -49,9 +79,7 @@ function ClockCard({
   clock: TeamClock;
 }) {
   const isRunning = clock.runningSince !== null;
-  const remainingMs = isRunning
-    ? Math.max(0, clock.remainingMs - (Date.now() - (clock.runningSince ?? 0)))
-    : clock.remainingMs;
+  const remainingMs = liveRemaining(clock);
 
   const color = TEAM_COLORS[team];
   const lowTime = remainingMs <= 30_000;
