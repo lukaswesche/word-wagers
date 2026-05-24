@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
-import RoomHeader from './RoomHeader';
 import TeamClocks from './TeamClocks';
 import { playSound } from './useSound';
 import { teamLabel, type AckResponse, type RoomState } from './types';
@@ -65,10 +64,10 @@ function Guessing({ room, myId }: Props) {
           >
             {isOnPerformerTeam ? teamLabel(teamClass) + ' · Guessing' : teamLabel(opposingTeam) + ' watching'}
           </span>
+          <button className="fs-room-tag" onClick={copyCode} title="Copy room code">{room.code}</button>
         </div>
       </div>
 
-      <RoomHeader code={room.code} />
       <TeamClocks room={room} />
 
       {/* HINT is visible to BOTH teams (chess-clock model) */}
@@ -91,7 +90,6 @@ function Guessing({ room, myId }: Props) {
       )}
 
       <div className="fs-context-strip">
-        <button className="fs-room-tag" onClick={copyCode}>{room.code}</button>
         <span className="fs-context-text" style={{ fontSize: '0.9rem' }}>
           {canGuess
             ? <>Tap words to select — need exactly <strong>{bidCount}</strong></>

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
-import RoomHeader from './RoomHeader';
 import TeamClocks from './TeamClocks';
 import { playSound, vibrate } from './useSound';
 import { type AckResponse, type RoomState, type Team } from './types';
@@ -83,18 +82,13 @@ function Resolved({ room, myId }: Props) {
         <div className="fs-top-bar">
           <div className="fs-top-bar-left">
             <span className="fs-phase-label">Result</span>
+            <button className="fs-room-tag" onClick={copyCode} title="Copy room code">{room.code}</button>
           </div>
         </div>
 
-        <RoomHeader code={room.code} />
         <TeamClocks room={room} />
 
         <div className="fs-panel-body">
-          <div className="fs-room-hero small">
-            <p className="fs-room-hero-label">Room</p>
-            <button className="fs-room-hero-code" onClick={copyCode}>{room.code}</button>
-          </div>
-
           <div className={'result-fs-card ' + resultClass}>
             <p className="result-fs-outcome">
               {myTeam ? (iWon ? 'You win!' : 'You lose') : 'Round result'}

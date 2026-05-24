@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
-import RoomHeader from './RoomHeader';
 import TeamClocks from './TeamClocks';
 import { playSound } from './useSound';
 import { teamLabel, type AckResponse, type RoomState } from './types';
@@ -50,14 +49,13 @@ function Performing({ room, myId }: Props) {
           <span className="fs-phase-label" style={{ color: teamColor }}>
             {teamLabel(performing.team)} · Performing
           </span>
+          <button className="fs-room-tag" onClick={copyCode} title="Copy room code">{room.code}</button>
         </div>
       </div>
 
-      <RoomHeader code={room.code} />
       <TeamClocks room={room} />
 
       <div className="fs-context-strip">
-        <button className="fs-room-tag" onClick={copyCode}>{room.code}</button>
         <span className="fs-context-text">
           <strong className={'team-' + teamClass}>{performer?.name ?? '?'}</strong>
           {' '}must connect{' '}
