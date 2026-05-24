@@ -1,0 +1,4 @@
+/* Browser reset — all real styles live in App.css */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+img, video { max-width: 100%; display: block; }
