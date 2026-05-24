@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
+import SeriesStrip from './SeriesStrip';
 import TeamClocks from './TeamClocks';
 import { playSound } from './useSound';
 import { teamLabel, type AckResponse, type RoomState } from './types';
@@ -68,6 +69,7 @@ function Guessing({ room, myId }: Props) {
         </div>
       </div>
 
+      <SeriesStrip room={room} />
       <TeamClocks room={room} />
 
       {/* HINT is visible to BOTH teams (chess-clock model) */}

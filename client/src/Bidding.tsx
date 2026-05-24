@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
-import TeamClocks from './TeamClocks';
+import SeriesStrip from './SeriesStrip';
 import { playSound } from './useSound';
 import { teamLabel, type AckResponse, type RoomState } from './types';
 
@@ -60,7 +60,7 @@ function Bidding({ room, myId }: Props) {
             <button className="fs-room-tag" onClick={copyCode} title="Copy room code">{room.code}</button>
           </div>
         </div>
-        <TeamClocks room={room} />
+        <SeriesStrip room={room} />
         <div className="fs-panel-body">
           <div className="bid-captains-strip">
             {(['red', 'blue'] as const).map(team => {
@@ -144,7 +144,7 @@ function Bidding({ room, myId }: Props) {
           <p className="board-hint-bar">
             {me?.team
               ? myCaptainTeam
-                ? "You're captain — think about which words you can connect with one hint."
+                ? "You're captain — think about which words you can connect with a hint."
                 : 'Study the board. Your captain is deciding the bid.'
               : 'Spectating — watch the board.'}
           </p>

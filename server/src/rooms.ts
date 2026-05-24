@@ -20,7 +20,8 @@ const BOARD_SIZE = 25;
 const MIN_PLAYERS = 4;
 const MIN_PER_TEAM = 2;
 const MIN_OPENING_BID = 2;
-const MAX_HINT_LENGTH = 30;
+const MAX_HINT_WORDS = 25;
+const MAX_HINT_LENGTH = 200;
 
 // Fixed per-team time budget. Each team has this much time across the entire
 // round (bidding turns + performing + guessing). When a team's clock hits 0
@@ -54,6 +55,7 @@ type Room = {
   scores: { red: number; blue: number };
   teamClocks: TeamClocks;
   timerId: NodeJS.Timeout | null; // server-only, fires when active team's clock hits 0
+  lastOpener: Team | null; // server-only, alternates first team across games
   createdAt: number;
 };
 
@@ -130,6 +132,7 @@ export class RoomManager {
       scores: { red: 0, blue: 0 },
       teamClocks: freshClocks(),
       timerId: null,
+      lastOpener: null,
       createdAt: Date.now(),
     };
     this.rooms.set(code, room);
@@ -300,9 +303,12 @@ export class RoomManager {
       throw new Error('Only the performing captain can submit');
     }
 
-    const cleanHint = hint?.trim() ?? '';
+    const cleanHint = hint?.trim().replace(/\s+/g, ' ') ?? '';
     if (!cleanHint) throw new Error('Hint is required');
-    if (/\s/.test(cleanHint)) throw new Error('Hint must be a single word (no spaces)');
+    const wordCount = cleanHint.split(' ').length;
+    if (wordCount > MAX_HINT_WORDS) {
+      throw new Error(`Hint must be at most ${MAX_HINT_WORDS} words`);
+    }
     if (cleanHint.length > MAX_HINT_LENGTH) {
       throw new Error(`Hint must be at most ${MAX_HINT_LENGTH} characters`);
     }
@@ -522,7 +528,10 @@ export class RoomManager {
     room.words = pickRandomWords(BOARD_SIZE);
     room.phase = 'bidding';
 
-    const openingTeam: Team = Math.random() < 0.5 ? 'red' : 'blue';
+    const openingTeam: Team = room.lastOpener === null
+      ? (Math.random() < 0.5 ? 'red' : 'blue')
+      : (room.lastOpener === 'red' ? 'blue' : 'red');
+    room.lastOpener = openingTeam;
     room.bidding = {
       history: [],
       currentTurn: openingTeam,

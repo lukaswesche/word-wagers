@@ -43,7 +43,7 @@ function Home() {
         <div className="home-eyebrow">Party word game · 4+ players</div>
         <h1 className="home-title">Word<br />Wagers</h1>
         <p className="home-tagline">
-          One hint. One word. How many can your team get?
+          One hint. How many can your team get?
         </p>
       </div>
 
