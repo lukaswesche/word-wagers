@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RoomManager } from './rooms.js';
@@ -23,11 +24,18 @@ import type {
 } from './types.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
-const SERVE_CLIENT = process.env.SERVE_CLIENT === 'true';
 const DEV_CLIENT_ORIGIN = 'http://localhost:5173';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.resolve(__dirname, '../../client/dist');
+
+// Serve the built client whenever a build exists. SERVE_CLIENT=true forces it
+// on; SERVE_CLIENT=false forces it off (handy while iterating on the dev
+// placeholder); unset auto-detects.
+const hasClientBuild = fs.existsSync(path.join(CLIENT_DIST, 'index.html'));
+const SERVE_CLIENT =
+  process.env.SERVE_CLIENT === 'true' ||
+  (process.env.SERVE_CLIENT !== 'false' && hasClientBuild);
 
 const app = express();
 const httpServer = createServer(app);
@@ -330,7 +338,10 @@ if (SERVE_CLIENT) {
   console.log(`serving client from ${CLIENT_DIST}`);
 } else {
   app.get('/', (_req, res) => {
-    res.send('codename server is running (dev mode — client at http://localhost:5173)');
+    res.send(
+      'codename server is running (dev mode — client at http://localhost:5173). ' +
+        'No build found at client/dist — run `npm --prefix client run build` to serve from this port.',
+    );
   });
 }
 
