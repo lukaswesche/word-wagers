@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
 import RoomHeader from './RoomHeader';
-import { type AckResponse, type RoomState } from './types';
+import { type AckResponse, type RoomState, type Team } from './types';
 
 type Props = { room: RoomState; myId: string | null };
 
@@ -28,13 +28,21 @@ function Resolved({ room, myId }: Props) {
   const isLoser     = myTeam !== null && !iWon;
   const isHost      = myId === room.host;
   const hostName    = room.players.find(p => p.id === room.host)?.name ?? 'the host';
-  const correctCount = resolution.guesses.filter(g => resolution.targets.includes(g)).length;
-  const resultClass  = myTeam === null ? 'neutral' : iWon ? 'win' : 'lose';
+  const resultClass = myTeam === null ? 'neutral' : iWon ? 'win' : 'lose';
 
-  const redName  = room.teamNames.red;
-  const blueName = room.teamNames.blue;
+  const redName    = room.teamNames.red;
+  const blueName   = room.teamNames.blue;
   const winnerName = resolution.winner === 'red' ? redName : blueName;
   const loserName  = resolution.winner === 'red' ? blueName : redName;
+
+  const teamDisplayLabel = (team: Team) => (team === 'red' ? redName : blueName);
+
+  // Fields populated for normal resolutions; may be null on timeout
+  const targets = resolution.targets;
+  const guesses = resolution.guesses;
+  const hint    = resolution.hint;
+  const correctCount =
+    targets && guesses ? guesses.filter((g) => targets.includes(g)).length : null;
 
   const playAgain = () => {
     setBusy(true);
@@ -54,13 +62,10 @@ function Resolved({ room, myId }: Props) {
       if (!res.ok) {
         setTauntError(res.error);
       } else {
-        setTauntDismissed(true); // sender skips seeing their own overlay
+        setTauntDismissed(true);
       }
     });
   };
-
-  const teamDisplayLabel = (team: typeof resolution.winner) =>
-    team === 'red' ? redName : blueName;
 
   return (
     <section>
@@ -74,11 +79,27 @@ function Resolved({ room, myId }: Props) {
         <h2 className={`result-winner ${resolution.winner}`}>
           {teamDisplayLabel(resolution.winner)} wins
         </h2>
-        <p className="result-summary">
-          {teamDisplayLabel(resolution.performerTeam)} got{' '}
-          <strong>{correctCount}</strong> / <strong>{resolution.bidCount}</strong> on hint{' '}
-          <span className="result-hint-chip">{resolution.hint.toUpperCase()}</span>
-        </p>
+        {resolution.reason === 'timeout' ? (
+          <p className="result-summary">
+            <strong>{teamDisplayLabel(resolution.timedOutTeam)}</strong> ran out of time during the{' '}
+            <strong>{resolution.timedOutPhase}</strong> phase.
+            {hint && (
+              <>
+                {' '}Hint was{' '}
+                <span className="result-hint-chip">{hint.toUpperCase()}</span>
+                {resolution.bidCount !== null && (
+                  <> for <strong>{resolution.bidCount}</strong> {resolution.bidCount === 1 ? 'word' : 'words'}</>
+                )}.
+              </>
+            )}
+          </p>
+        ) : (
+          <p className="result-summary">
+            {teamDisplayLabel(resolution.performerTeam)} got{' '}
+            <strong>{correctCount}</strong> / <strong>{resolution.bidCount}</strong> on hint{' '}
+            <span className="result-hint-chip">{resolution.hint.toUpperCase()}</span>
+          </p>
+        )}
       </div>
 
       {/* Taunt composer — only for winners, only if no taunt yet */}
@@ -129,17 +150,26 @@ function Resolved({ room, myId }: Props) {
 
       {error && <p className="error-msg" role="alert">{error}</p>}
 
-      {/* Legend */}
-      <p className="board-section-title">Board — revealed</p>
-      <p className="board-section-hint">
-        <span style={{ color: 'var(--correct)', fontWeight: 600 }}>●</span> Correct &nbsp;·&nbsp;
-        <span style={{ color: 'var(--wrong)',   fontWeight: 600 }}>●</span> Wrong &nbsp;·&nbsp;
-        <span style={{ color: 'var(--missed)',  fontWeight: 600 }}>●</span> Missed target
-      </p>
-      <Board
-        words={room.words}
-        reveal={{ targets: resolution.targets, guesses: resolution.guesses }}
-      />
+      {/* Board — only show reveal if we have targets to reveal */}
+      {targets ? (
+        <>
+          <p className="board-section-title">Board — revealed</p>
+          <p className="board-section-hint">
+            <span style={{ color: 'var(--correct)', fontWeight: 600 }}>●</span> Correct &nbsp;·&nbsp;
+            <span style={{ color: 'var(--wrong)',   fontWeight: 600 }}>●</span> Wrong &nbsp;·&nbsp;
+            <span style={{ color: 'var(--missed)',  fontWeight: 600 }}>●</span> Missed target
+          </p>
+          <Board
+            words={room.words}
+            reveal={{ targets, guesses: guesses ?? [] }}
+          />
+        </>
+      ) : (
+        <>
+          <p className="board-section-title">Board</p>
+          <Board words={room.words} />
+        </>
+      )}
 
       {/* ── Taunt overlay ── */}
       {room.taunt && !tauntDismissed && (

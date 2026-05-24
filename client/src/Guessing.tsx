@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
 import RoomHeader from './RoomHeader';
+import CountdownTimer from './CountdownTimer';
 import { teamLabel, type AckResponse, type RoomState } from './types';
 
 type Props = { room: RoomState; myId: string | null };
@@ -49,6 +50,9 @@ function Guessing({ room, myId }: Props) {
       {/* Hint display — only shown to the performing team */}
       {isOnPerformerTeam ? (
         <div className={`hint-display phase-banner team-${teamClass}`}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.4rem' }}>
+            <CountdownTimer deadline={room.turnDeadline} />
+          </div>
           <p className="hint-super">
             Hint from {performer?.name ?? '?'} ({teamLabel(performing.team)})
           </p>
@@ -59,9 +63,12 @@ function Guessing({ room, myId }: Props) {
         </div>
       ) : (
         <div className={`phase-banner team-${performing.team === 'red' ? 'blue' : 'red'}`}>
-          <p className={`phase-chip team-${performing.team === 'red' ? 'blue' : 'red'}`}>
-            Opposing team is guessing
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <p className={`phase-chip team-${performing.team === 'red' ? 'blue' : 'red'}`} style={{ margin: 0 }}>
+              Opposing team is guessing
+            </p>
+            <CountdownTimer deadline={room.turnDeadline} />
+          </div>
           <p className="phase-title">
             {teamLabel(performing.team)} has their hint — wait to see if they get it right.
           </p>

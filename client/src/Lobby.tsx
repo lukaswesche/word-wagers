@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { socket } from './socket';
 import RoomHeader from './RoomHeader';
-import { type AckResponse, type Player, type RoomState, type Team } from './types';
+import {
+  TIME_LIMIT_OPTIONS,
+  formatTimeLimit,
+  type AckResponse,
+  type Player,
+  type RoomState,
+  type Team,
+} from './types';
 
 type Props = { room: RoomState; myId: string | null };
 
@@ -29,6 +36,13 @@ function Lobby({ room, myId }: Props) {
     const val = name.trim();
     if (!val) return;
     socket.emit('set-team-name', { team, name: val }, (res: AckResponse) => {
+      if (!res.ok) setError(res.error);
+    });
+  };
+
+  const setTimeLimit = (seconds: number | null) => {
+    setError(null);
+    socket.emit('set-time-limit', { seconds }, (res: AckResponse) => {
       if (!res.ok) setError(res.error);
     });
   };
@@ -131,6 +145,71 @@ function Lobby({ room, myId }: Props) {
           </div>
         </div>
       )}
+
+      {/* Time limit — host can set, everyone sees value */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          padding: '0.75rem 1rem',
+          marginTop: '1rem',
+          background: 'var(--surface-soft)',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+        }}
+      >
+        <div>
+          <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+            Time limit per decision
+          </p>
+          <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
+            If a player runs out of time on their turn, their team loses the round.
+          </p>
+        </div>
+        {isHost ? (
+          <select
+            value={room.settings.roundTimeoutSeconds === null ? 'null' : String(room.settings.roundTimeoutSeconds)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setTimeLimit(v === 'null' ? null : Number(v));
+            }}
+            style={{
+              padding: '0.45rem 0.7rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text)',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              outline: 'none',
+              minWidth: '8rem',
+            }}
+          >
+            {TIME_LIMIT_OPTIONS.map((opt) => (
+              <option key={String(opt.value)} value={opt.value === null ? 'null' : String(opt.value)}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span
+            style={{
+              padding: '0.45rem 0.85rem',
+              borderRadius: '999px',
+              background: 'rgba(124, 92, 252, 0.13)',
+              border: '1px solid rgba(124, 92, 252, 0.28)',
+              color: 'var(--text)',
+              fontSize: '0.9rem',
+              fontWeight: 700,
+            }}
+          >
+            {formatTimeLimit(room.settings.roundTimeoutSeconds)}
+          </span>
+        )}
+      </div>
 
       {/* Team columns */}
       <div className="team-grid">

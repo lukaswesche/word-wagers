@@ -16,6 +16,7 @@ import type {
   SendTauntPayload,
   SetTeamNamePayload,
   SetTeamPayload,
+  SetTimeLimitPayload,
   StartGamePayload,
   SubmitGuessesPayload,
   SubmitTargetsAndHintPayload,
@@ -40,7 +41,13 @@ const io = new Server(httpServer, {
   cors: SERVE_CLIENT ? undefined : { origin: DEV_CLIENT_ORIGIN },
 });
 
-const rooms = new RoomManager();
+// When a server-side timer fires (e.g., turn timeout), RoomManager invokes
+// this callback so the new state gets broadcast even though no client event
+// triggered the change.
+const rooms = new RoomManager((room) => {
+  io.to(room.code).emit('room-state', rooms.toRoomState(room));
+  console.log(`timeout in room ${room.code}: ${room.resolution?.reason}`);
+});
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Unknown error';
@@ -269,6 +276,26 @@ io.on('connection', (socket) => {
         const name = payload?.name;
         if (team !== 'red' && team !== 'blue') return ack({ ok: false, error: 'Invalid team' });
         const room = rooms.setTeamName(playerId, team, name);
+        ack({ ok: true });
+        io.to(room.code).emit('room-state', rooms.toRoomState(room));
+      } catch (e) {
+        ack({ ok: false, error: errorMessage(e) });
+      }
+    },
+  );
+
+  socket.on(
+    'set-time-limit',
+    (payload: SetTimeLimitPayload, ack: (response: AckResponse) => void) => {
+      const playerId = requireIdentified(socket.id);
+      if (!playerId) return ack({ ok: false, error: 'Not identified' });
+      try {
+        const raw = payload?.seconds;
+        const seconds = raw === null || raw === undefined ? null : Number(raw);
+        if (seconds !== null && !Number.isFinite(seconds)) {
+          return ack({ ok: false, error: 'Invalid time limit' });
+        }
+        const room = rooms.setTimeLimit(playerId, seconds);
         ack({ ok: true });
         io.to(room.code).emit('room-state', rooms.toRoomState(room));
       } catch (e) {

@@ -36,20 +36,37 @@ export type GuessingState = {
   pendingGuesses: string[];
 };
 
-export type Resolution = {
-  winner: Team;
-  performerTeam: Team;
-  bidCount: number;
-  hint: string;
-  targets: string[];
-  guesses: string[];
-};
+export type Resolution =
+  | {
+      reason: 'normal';
+      winner: Team;
+      performerTeam: Team;
+      bidCount: number;
+      hint: string;
+      targets: string[];
+      guesses: string[];
+    }
+  | {
+      reason: 'timeout';
+      winner: Team;
+      timedOutTeam: Team;
+      timedOutPhase: 'bidding' | 'performing' | 'guessing';
+      performerTeam: Team | null;
+      bidCount: number | null;
+      hint: string | null;
+      targets: string[] | null;
+      guesses: string[] | null;
+    };
 
 export type Taunt = {
   fromId: string;
   fromName: string;
   message: string;
   winnerTeam: Team;
+};
+
+export type RoomSettings = {
+  roundTimeoutSeconds: number | null;
 };
 
 export type RoomState = {
@@ -65,6 +82,8 @@ export type RoomState = {
   resolution: Resolution | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
+  settings: RoomSettings;
+  turnDeadline: number | null;
 };
 
 export type AckResponse<T = unknown> =
@@ -78,4 +97,18 @@ export const TEAM_COLORS: Record<Team, string> = {
 
 export function teamLabel(team: Team): string {
   return team === 'red' ? 'Red' : 'Blue';
+}
+
+// Time-limit options shown to the host (must match server's ALLOWED_TIMEOUTS).
+export const TIME_LIMIT_OPTIONS: { value: number | null; label: string }[] = [
+  { value: null, label: 'No limit' },
+  { value: 30, label: '30 seconds' },
+  { value: 60, label: '1 minute' },
+  { value: 90, label: '90 seconds' },
+  { value: 120, label: '2 minutes' },
+];
+
+export function formatTimeLimit(seconds: number | null): string {
+  const opt = TIME_LIMIT_OPTIONS.find((o) => o.value === seconds);
+  return opt?.label ?? (seconds === null ? 'No limit' : `${seconds}s`);
 }

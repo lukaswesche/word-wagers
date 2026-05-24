@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
 import RoomHeader from './RoomHeader';
+import CountdownTimer from './CountdownTimer';
 import { teamLabel, type AckResponse, type RoomState } from './types';
 
 type Props = { room: RoomState; myId: string | null };
@@ -77,8 +78,11 @@ function Bidding({ room, myId }: Props) {
 
       {/* Bid log */}
       <div className="card">
-        <p className="card-label">Bid history</p>
-        <p style={{ margin: 0, fontWeight: 600 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <p className="card-label" style={{ margin: 0 }}>Bid history</p>
+          <CountdownTimer deadline={room.turnDeadline} />
+        </div>
+        <p style={{ margin: '0.5rem 0 0', fontWeight: 600 }}>
           {isMyTurn
             ? 'Your move.'
             : `Waiting for ${turnName} (${teamLabel(bidding.currentTurn)}) …`}

@@ -6,6 +6,7 @@ import type {
   PerformingState,
   Player,
   Resolution,
+  RoomSettings,
   RoomState,
   Taunt,
   Team,
@@ -20,6 +21,9 @@ const MIN_PER_TEAM = 2;
 const MIN_OPENING_BID = 2;
 const MAX_HINT_LENGTH = 30;
 
+// Allowed time-limit options the host can pick (seconds; null = no limit)
+const ALLOWED_TIMEOUTS: readonly (number | null)[] = [null, 30, 60, 90, 120];
+
 type InternalPlayer = {
   playerId: string;
   socketId: string | null;
@@ -29,7 +33,7 @@ type InternalPlayer = {
 
 type Room = {
   code: string;
-  host: string;          // playerId of whoever created the room
+  host: string;
   players: InternalPlayer[];
   phase: 'lobby' | 'bidding' | 'performing' | 'guessing' | 'resolved';
   words: string[] | null;
@@ -41,13 +45,23 @@ type Room = {
   performerTargets: string[] | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
+  settings: RoomSettings;
+  turnDeadline: number | null;
+  timerId: NodeJS.Timeout | null; // server-only, never broadcast
   createdAt: number;
 };
+
+type OnRoomChange = (room: Room) => void;
 
 export class RoomManager {
   private rooms = new Map<string, Room>();
   private playerToRoom = new Map<string, string>();
   private socketToPlayer = new Map<string, string>();
+  private onRoomChange?: OnRoomChange;
+
+  constructor(onRoomChange?: OnRoomChange) {
+    this.onRoomChange = onRoomChange;
+  }
 
   // ─── identity ───
 
@@ -107,6 +121,9 @@ export class RoomManager {
       performerTargets: null,
       teamNames: { red: 'Red', blue: 'Blue' },
       taunt: null,
+      settings: { roundTimeoutSeconds: null },
+      turnDeadline: null,
+      timerId: null,
       createdAt: Date.now(),
     };
     this.rooms.set(code, room);
@@ -144,10 +161,10 @@ export class RoomManager {
 
     room.players = room.players.filter((p) => p.playerId !== playerId);
     if (room.players.length === 0) {
+      this.clearTurnTimer(room);
       this.rooms.delete(code);
       return null;
     }
-    // Transfer host to the next player if the host left
     if (room.host === playerId) {
       room.host = room.players[0].playerId;
     }
@@ -172,6 +189,17 @@ export class RoomManager {
     const clean = name.trim().slice(0, 24);
     if (!clean) throw new Error('Team name cannot be empty');
     room.teamNames[team] = clean;
+    return room;
+  }
+
+  setTimeLimit(playerId: string, seconds: number | null): Room {
+    const room = this.requireRoomForPlayer(playerId);
+    if (room.phase !== 'lobby') throw new Error('Time limit can only be changed in the lobby');
+    if (playerId !== room.host) throw new Error('Only the host can change the time limit');
+    if (!ALLOWED_TIMEOUTS.includes(seconds)) {
+      throw new Error('Invalid time limit');
+    }
+    room.settings.roundTimeoutSeconds = seconds;
     return room;
   }
 
@@ -232,6 +260,8 @@ export class RoomManager {
     const bid: Bid = { team: turn, count };
     room.bidding.history.push(bid);
     room.bidding.currentTurn = turn === 'red' ? 'blue' : 'red';
+    // Restart timer for the new turn
+    this.startTurnTimer(room);
     return room;
   }
 
@@ -258,6 +288,7 @@ export class RoomManager {
       bidCount: lastBid.count,
       hint: null,
     };
+    this.startTurnTimer(room);
     return room;
   }
 
@@ -295,6 +326,7 @@ export class RoomManager {
     room.performing.hint = cleanHint;
     room.phase = 'guessing';
     room.guessing = { pendingGuesses: [] };
+    this.startTurnTimer(room);
     return room;
   }
 
@@ -325,6 +357,8 @@ export class RoomManager {
       }
       current.push(word);
     }
+    // Note: toggling does NOT reset the timer — the team has one continuous
+    // window to decide and submit.
     return room;
   }
 
@@ -353,7 +387,8 @@ export class RoomManager {
     const performerTeam = room.performing.team;
     const otherTeam: Team = performerTeam === 'red' ? 'blue' : 'red';
 
-    const resolution: Resolution = {
+    room.resolution = {
+      reason: 'normal',
       winner: allCorrect ? performerTeam : otherTeam,
       performerTeam,
       bidCount: room.performing.bidCount,
@@ -363,7 +398,7 @@ export class RoomManager {
     };
 
     room.phase = 'resolved';
-    room.resolution = resolution;
+    this.clearTurnTimer(room);
     return room;
   }
 
@@ -408,7 +443,76 @@ export class RoomManager {
       resolution: room.resolution,
       teamNames: room.teamNames,
       taunt: room.taunt,
+      settings: room.settings,
+      turnDeadline: room.turnDeadline,
     };
+  }
+
+  // ─── timer ───
+
+  private startTurnTimer(room: Room): void {
+    this.clearTurnTimer(room);
+    const seconds = room.settings.roundTimeoutSeconds;
+    if (seconds === null || seconds <= 0) {
+      room.turnDeadline = null;
+      return;
+    }
+    const deadline = Date.now() + seconds * 1000;
+    room.turnDeadline = deadline;
+    const code = room.code; // capture for closure safety
+    room.timerId = setTimeout(() => {
+      const r = this.rooms.get(code);
+      if (!r) return;
+      this.handleTimeout(r);
+    }, seconds * 1000);
+  }
+
+  private clearTurnTimer(room: Room): void {
+    if (room.timerId) {
+      clearTimeout(room.timerId);
+      room.timerId = null;
+    }
+    room.turnDeadline = null;
+  }
+
+  private handleTimeout(room: Room): void {
+    if (room.phase === 'resolved' || room.phase === 'lobby') return;
+
+    let timedOutTeam: Team;
+    let timedOutPhase: 'bidding' | 'performing' | 'guessing';
+
+    if (room.phase === 'bidding' && room.bidding) {
+      timedOutPhase = 'bidding';
+      timedOutTeam = room.bidding.currentTurn;
+    } else if (room.phase === 'performing' && room.performing) {
+      timedOutPhase = 'performing';
+      timedOutTeam = room.performing.team;
+    } else if (room.phase === 'guessing' && room.performing) {
+      timedOutPhase = 'guessing';
+      timedOutTeam = room.performing.team;
+    } else {
+      return; // unknown state, no-op
+    }
+
+    const winner: Team = timedOutTeam === 'red' ? 'blue' : 'red';
+
+    room.resolution = {
+      reason: 'timeout',
+      winner,
+      timedOutTeam,
+      timedOutPhase,
+      performerTeam: room.performing?.team ?? null,
+      bidCount: room.performing?.bidCount ?? null,
+      hint: room.performing?.hint ?? null,
+      targets: room.performerTargets ? [...room.performerTargets] : null,
+      guesses: room.guessing ? [...room.guessing.pendingGuesses] : null,
+    };
+    room.phase = 'resolved';
+    this.clearTurnTimer(room);
+
+    // Broadcast the change since this was triggered by a server-side timer,
+    // not by a socket event.
+    this.onRoomChange?.(room);
   }
 
   // ─── helpers ───
@@ -435,6 +539,7 @@ export class RoomManager {
     room.resolution = null;
     room.performerTargets = null;
     room.taunt = null;
+    this.startTurnTimer(room);
   }
 
   private resetToLobby(room: Room): void {
@@ -447,6 +552,7 @@ export class RoomManager {
     room.resolution = null;
     room.performerTargets = null;
     room.taunt = null;
+    this.clearTurnTimer(room);
   }
 
   private requireGuesser(room: Room, playerId: string): void {

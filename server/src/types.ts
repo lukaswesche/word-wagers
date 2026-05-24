@@ -38,20 +38,40 @@ export type GuessingState = {
   pendingGuesses: string[];
 };
 
-export type Resolution = {
-  winner: Team;
-  performerTeam: Team;
-  bidCount: number;
-  hint: string;
-  targets: string[];
-  guesses: string[];
-};
+// Discriminated union: timeouts don't have all the normal fields populated.
+export type Resolution =
+  | {
+      reason: 'normal';
+      winner: Team;
+      performerTeam: Team;
+      bidCount: number;
+      hint: string;
+      targets: string[];
+      guesses: string[];
+    }
+  | {
+      reason: 'timeout';
+      winner: Team;
+      timedOutTeam: Team;
+      timedOutPhase: 'bidding' | 'performing' | 'guessing';
+      // Best-effort snapshots of partial state at timeout (may be null if not yet set):
+      performerTeam: Team | null;
+      bidCount: number | null;
+      hint: string | null;
+      targets: string[] | null;
+      guesses: string[] | null;
+    };
 
 export type Taunt = {
   fromId: string;
   fromName: string;
   message: string;
   winnerTeam: Team;
+};
+
+export type RoomSettings = {
+  // null = no time limit
+  roundTimeoutSeconds: number | null;
 };
 
 export type RoomState = {
@@ -67,6 +87,9 @@ export type RoomState = {
   resolution: Resolution | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
+  settings: RoomSettings;
+  // Unix ms timestamp by which the current decision must be made; null if no limit
+  turnDeadline: number | null;
 };
 
 export type CreateRoomPayload = { name: string };
@@ -82,6 +105,7 @@ export type PlayAgainPayload      = Record<string, never>;
 export type LeaveRoomPayload      = Record<string, never>;
 export type SetTeamNamePayload    = { team: Team; name: string };
 export type SendTauntPayload      = { message: string };
+export type SetTimeLimitPayload   = { seconds: number | null };
 
 export type AckResponse<T = unknown> =
   | ({ ok: true } & T)
