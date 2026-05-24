@@ -1,0 +1,29 @@
+# OS / editor
+.DS_Store
+._*
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node (sub-projects also gitignore these — belt and suspenders)
+node_modules/
+dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cloudflared local state (should live in ~/.cloudflared/, but just in case)
+.cloudflared/
+
+# Per-machine tool state
+.claude/settings.local.json
+.Rhistory
+*.tsbuildinfo
