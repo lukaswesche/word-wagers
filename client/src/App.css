@@ -510,54 +510,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
    SHARED COMPONENTS
    ============================================================ */
 
-/* --- Room Code Card ---------------------------------------- */
-.room-code-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  box-shadow: var(--shadow-sm);
-  padding: 1.75rem 1.5rem 1.5rem;
-  text-align: center;
-  margin-bottom: 1.5rem;
-}
-
-.room-code-label {
-  margin: 0;
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--muted);
-}
-
-.room-code-value {
-  margin: 0.5rem 0 1rem;
-  font-size: clamp(2.25rem, 6vw, 3rem);
-  font-weight: 900;
-  letter-spacing: 0.28em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--accent-up);
-  text-shadow: 0 0 48px var(--accent-glow);
-  animation: fade-in-up 0.5s ease both;
-}
-
-.room-code-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 1.1rem;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
-  color: var(--accent-up);
-  font-size: 0.85rem;
-  font-weight: 700;
-  transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-}
-
-.room-code-copy:hover  { background: rgba(124, 92, 252, 0.22); box-shadow: 0 6px 18px var(--accent-glow); transform: translateY(-1px); }
-.room-code-copy:active { transform: translateY(1px); transition-duration: 80ms; }
-
 /* --- Surface Card ------------------------------------------ */
 .card {
   background: var(--surface);
@@ -1332,7 +1284,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
     border-radius: 10px;
   }
 
-  .room-code-value { font-size: 2rem; letter-spacing: 0.22em; }
   .settings-popover { right: 0.75rem; top: 0.75rem; }
 }
 
@@ -1631,17 +1582,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 .fs-room-hero-code:active { transform: translateY(0); transition-duration: 80ms; }
-
-/* Smaller room code variant for non-lobby phases */
-.fs-room-hero.small .fs-room-hero-code {
-  font-size: clamp(1.5rem, 4vw, 2.2rem);
-  padding: 0.4rem 1.1rem 0.4rem 1.3rem;
-  letter-spacing: 0.22em;
-  border-radius: 16px;
-  border-width: 1.5px;
-}
-
-.fs-room-hero.small .fs-room-hero-label { font-size: 0.62rem; letter-spacing: 0.2em; }
 
 /* Panel body — the scrollable content area */
 .fs-panel-body {

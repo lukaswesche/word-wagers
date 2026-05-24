@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
-import RoomHeader from './RoomHeader';
 import TeamClocks from './TeamClocks';
 import { playSound } from './useSound';
 import { teamLabel, type AckResponse, type RoomState } from './types';
@@ -58,16 +57,11 @@ function Bidding({ room, myId }: Props) {
         <div className="fs-top-bar">
           <div className="fs-top-bar-left">
             <span className="fs-phase-label">Bidding</span>
+            <button className="fs-room-tag" onClick={copyCode} title="Copy room code">{room.code}</button>
           </div>
         </div>
-        <RoomHeader code={room.code} />
         <TeamClocks room={room} />
         <div className="fs-panel-body">
-          <div className="fs-room-hero small">
-            <p className="fs-room-hero-label">Room</p>
-            <button className="fs-room-hero-code" onClick={copyCode}>{room.code}</button>
-          </div>
-
           <div className="bid-captains-strip">
             {(['red', 'blue'] as const).map(team => {
               const cap = room.players.find(p => p.id === captains[team]);
