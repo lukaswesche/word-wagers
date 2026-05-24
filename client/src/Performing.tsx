@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
+import SeriesStrip from './SeriesStrip';
 import TeamClocks from './TeamClocks';
 import { playSound } from './useSound';
 import { teamLabel, type AckResponse, type RoomState } from './types';
@@ -21,6 +22,11 @@ function Performing({ room, myId }: Props) {
   const bidCount    = performing.bidCount;
   const teamClass   = performing.team;
 
+  const MAX_HINT_WORDS = 25;
+  const trimmedHint = hint.trim().replace(/\s+/g, ' ');
+  const hintWordCount = trimmedHint ? trimmedHint.split(' ').length : 0;
+  const hintOverLimit = hintWordCount > MAX_HINT_WORDS;
+
   const toggle = (word: string) => {
     const isSelected = selected.includes(word);
     setSelected(prev => isSelected ? prev.filter(w => w !== word) : [...prev, word]);
@@ -29,16 +35,17 @@ function Performing({ room, myId }: Props) {
 
   const submit = () => {
     if (selected.length !== bidCount) { setError('Pick exactly ' + bidCount + ' words'); return; }
-    if (!hint.trim())                 { setError('Enter a one-word hint');                return; }
+    if (!trimmedHint)                 { setError('Enter a hint');                         return; }
+    if (hintOverLimit)                { setError('Hint must be at most ' + MAX_HINT_WORDS + ' words'); return; }
     setBusy(true); setError(null);
-    socket.emit('submit-targets-and-hint', { targets: selected, hint: hint.trim() }, (res: AckResponse) => {
+    socket.emit('submit-targets-and-hint', { targets: selected, hint: trimmedHint }, (res: AckResponse) => {
       setBusy(false);
       if (res.ok) playSound('submit');
       else setError(res.error);
     });
   };
 
-  const canSubmit = selected.length === bidCount && hint.trim().length > 0;
+  const canSubmit = selected.length === bidCount && trimmedHint.length > 0 && !hintOverLimit;
   const copyCode  = () => navigator.clipboard.writeText(room.code).catch(() => {});
   const teamColor = teamClass === 'red' ? 'var(--red)' : 'var(--blue)';
 
@@ -53,6 +60,7 @@ function Performing({ room, myId }: Props) {
         </div>
       </div>
 
+      <SeriesStrip room={room} />
       <TeamClocks room={room} />
 
       <div className="fs-context-strip">
@@ -60,7 +68,7 @@ function Performing({ room, myId }: Props) {
           <strong className={'team-' + teamClass}>{performer?.name ?? '?'}</strong>
           {' '}must connect{' '}
           <strong>{bidCount}</strong>
-          {' '}{bidCount === 1 ? 'word' : 'words'} with one hint
+          {' '}{bidCount === 1 ? 'word' : 'words'} with a hint
         </span>
       </div>
 
@@ -92,8 +100,8 @@ function Performing({ room, myId }: Props) {
               className="fs-hint-input"
               value={hint}
               onChange={e => setHint(e.target.value)}
-              placeholder="one-word hint"
-              maxLength={30}
+              placeholder="your hint"
+              maxLength={200}
               autoComplete="off"
             />
             <button
@@ -104,6 +112,9 @@ function Performing({ room, myId }: Props) {
               Submit
             </button>
           </div>
+          <p className={'fs-hint-counter' + (hintOverLimit ? ' over' : '')}>
+            {hintWordCount} / {MAX_HINT_WORDS} words
+          </p>
         </div>
       )}
     </div>

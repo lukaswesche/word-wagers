@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
+import SeriesStrip from './SeriesStrip';
 import TeamClocks from './TeamClocks';
 import { playSound, vibrate } from './useSound';
 import { type AckResponse, type RoomState, type Team } from './types';
@@ -86,6 +87,7 @@ function Resolved({ room, myId }: Props) {
           </div>
         </div>
 
+        <SeriesStrip room={room} />
         <TeamClocks room={room} />
 
         <div className="fs-panel-body">
@@ -167,7 +169,6 @@ function Resolved({ room, myId }: Props) {
                 onClick={playAgain}
                 disabled={busy}
               >
-                <span className="play-again-icon">⚡</span>
                 <span className="play-again-text">{busy ? 'Starting...' : 'Play Again'}</span>
                 <span className="play-again-sub">Same teams · New board</span>
               </button>
