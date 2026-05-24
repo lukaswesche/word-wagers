@@ -7,11 +7,13 @@ import type { RoomState } from './types';
 import './App.css';
 
 type Mode = 'dark' | 'light';
+type A11y = 'standard' | 'high-contrast' | 'reduced-motion' | 'dyslexia';
 
 function App() {
   const [connected, setConnected] = useState(false);
   const [room, setRoom] = useState<RoomState | null>(null);
-  const [mode, setMode] = useState<Mode>('dark');
+  const [mode] = useState<Mode>('dark');
+  const [a11y, setA11y] = useState<A11y>('standard');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const playerIdRef = useRef<string>(getOrCreatePlayerId());
 
@@ -42,7 +44,8 @@ function App() {
   };
 
   const myId = playerIdRef.current;
-  const wrapperClass = `app-game theme-${mode}`;
+  const a11yClass = a11y !== 'standard' ? ` a11y-${a11y}` : '';
+  const wrapperClass = `app-game theme-${mode}${a11yClass}`;
 
   return (
     <div className={wrapperClass}>
@@ -76,13 +79,16 @@ function App() {
             <button className="settings-close" onClick={() => setSettingsOpen(false)}>✕</button>
           </div>
           <div className="settings-row">
-            <label>Theme</label>
+            <label htmlFor="a11y-select">Accessibility</label>
             <select
-              value={mode}
-              onChange={e => setMode(e.target.value as Mode)}
+              id="a11y-select"
+              value={a11y}
+              onChange={e => setA11y(e.target.value as A11y)}
             >
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
+              <option value="standard">Standard</option>
+              <option value="high-contrast">High contrast</option>
+              <option value="reduced-motion">Reduce motion</option>
+              <option value="dyslexia">Dyslexia-friendly</option>
             </select>
           </div>
           <div className="settings-row">

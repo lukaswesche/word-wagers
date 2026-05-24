@@ -189,7 +189,6 @@ export class RoomManager {
   setTeamName(playerId: string, team: Team, name: string): Room {
     const room = this.requireRoomForPlayer(playerId);
     if (room.phase !== 'lobby') throw new Error('Team names can only be changed in the lobby');
-    if (playerId !== room.host) throw new Error('Only the host can change team names');
     const clean = name.trim().slice(0, 24);
     if (!clean) throw new Error('Team name cannot be empty');
     room.teamNames[team] = clean;
@@ -216,7 +215,6 @@ export class RoomManager {
   startGame(playerId: string): Room {
     const room = this.requireRoomForPlayer(playerId);
     if (room.phase !== 'lobby') throw new Error('Game already started');
-    if (playerId !== room.host) throw new Error('Only the host can start the game');
 
     const validation = this.validateStartConditions(room);
     if (!validation.ok) throw new Error(validation.error);
@@ -403,7 +401,6 @@ export class RoomManager {
     if (room.phase !== 'resolved') {
       throw new Error('Can only play again after a round is resolved');
     }
-    if (playerId !== room.host) throw new Error('Only the host can start a new round');
 
     const validation = this.validateStartConditions(room);
     if (!validation.ok) {
