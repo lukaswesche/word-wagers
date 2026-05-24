@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { socket } from './socket';
-import RoomHeader from './RoomHeader';
+import { playSound } from './useSound';
 import {
   type AckResponse,
   type Player,
@@ -11,22 +11,22 @@ import {
 type Props = { room: RoomState; myId: string | null };
 
 function Lobby({ room, myId }: Props) {
-  const [error, setError] = useState<string | null>(null);
-  const [busy,  setBusy]  = useState(false);
-
-  // Local drafts for editable fields so typing feels instant
-  const [redNameDraft,    setRedNameDraft]    = useState<string | null>(null);
-  const [blueNameDraft,   setBlueNameDraft]   = useState<string | null>(null);
+  const [error,         setError]         = useState<string | null>(null);
+  const [busy,          setBusy]          = useState(false);
+  const [redNameDraft,  setRedNameDraft]  = useState<string | null>(null);
+  const [blueNameDraft, setBlueNameDraft] = useState<string | null>(null);
 
   const me          = room.players.find(p => p.id === myId) ?? null;
   const redPlayers  = room.players.filter(p => p.team === 'red');
   const bluePlayers = room.players.filter(p => p.team === 'blue');
   const unassigned  = room.players.filter(p => p.team === null);
+  const isHost      = myId === room.host;
 
   const setTeam = (team: Team | null) => {
     setError(null);
     socket.emit('set-team', { team }, (res: AckResponse) => {
-      if (!res.ok) setError(res.error);
+      if (res.ok) playSound('join');
+      else setError(res.error);
     });
   };
 
@@ -47,165 +47,189 @@ function Lobby({ room, myId }: Props) {
     });
   };
 
-  const isHost = myId === room.host;
-
   const canStartReason =
-    room.players.length < 4    ? `Need at least 4 players (have ${room.players.length})` :
-    redPlayers.length  < 2     ? `Red needs ≥ 2 players (have ${redPlayers.length})` :
-    bluePlayers.length < 2     ? `Blue needs ≥ 2 players (have ${bluePlayers.length})` :
+    room.players.length < 4 ? 'Need >=4 players (have ' + room.players.length + ')' :
+    redPlayers.length  < 2  ? 'Red needs >=2 players' :
+    bluePlayers.length < 2  ? 'Blue needs >=2 players' :
     null;
 
   const canStart = canStartReason === null && isHost;
-
   const redName  = redNameDraft  ?? room.teamNames.red;
   const blueName = blueNameDraft ?? room.teamNames.blue;
 
+  const copyCode = () => navigator.clipboard.writeText(room.code).catch(() => {});
+
   return (
-    <section>
-      <RoomHeader code={room.code} />
-
-      {/* Team picker */}
-      <div className="team-pick-section">
-        <span className="team-pick-label">Your team</span>
-        <div className="team-pick-row">
-          <button
-            className={`team-pick-btn ${me?.team === null ? 'active-none' : ''}`}
-            onClick={() => setTeam(null)}
-          >
-            Spectator
-          </button>
-          <button
-            className={`team-pick-btn ${me?.team === 'red' ? 'active-red' : ''}`}
-            onClick={() => setTeam('red')}
-          >
-            Red
-          </button>
-          <button
-            className={`team-pick-btn ${me?.team === 'blue' ? 'active-blue' : ''}`}
-            onClick={() => setTeam('blue')}
-          >
-            Blue
-          </button>
+    <div className="fs-panel fs-panel--lobby">
+      <div className="fs-top-bar">
+        <div className="fs-top-bar-left">
+          <span className="fs-phase-label">Lobby</span>
         </div>
       </div>
 
-      {/* Team name inputs — host only */}
-      {isHost && (
-        <div className="team-names-row">
-          <div className="team-name-field">
-            <label htmlFor="red-team-name">Red team name</label>
-            <input
-              id="red-team-name"
-              className="team-name-input red-team"
-              value={redName}
-              maxLength={24}
-              onChange={e => setRedNameDraft(e.target.value)}
-              onBlur={e => {
-                commitTeamName('red', e.target.value);
-                setRedNameDraft(null);
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  commitTeamName('red', (e.target as HTMLInputElement).value);
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              placeholder="Red"
-            />
-          </div>
-          <div className="team-name-field">
-            <label htmlFor="blue-team-name">Blue team name</label>
-            <input
-              id="blue-team-name"
-              className="team-name-input blue-team"
-              value={blueName}
-              maxLength={24}
-              onChange={e => setBlueNameDraft(e.target.value)}
-              onBlur={e => {
-                commitTeamName('blue', e.target.value);
-                setBlueNameDraft(null);
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  commitTeamName('blue', (e.target as HTMLInputElement).value);
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              placeholder="Blue"
-            />
-          </div>
+      <div className="fs-panel-body">
+        <div className="fs-room-hero">
+          <p className="fs-room-hero-label">Room code · tap to copy</p>
+          <button className="fs-room-hero-code" onClick={copyCode} title="Copy code">
+            {room.code}
+          </button>
         </div>
-      )}
 
-      {/* Team columns */}
-      <div className="team-grid">
-        <TeamPanel
-          title={room.teamNames.red}
-          cssClass="red"
-          players={redPlayers}
-          myId={myId}
-          hostId={room.host}
-        />
-        <TeamPanel
-          title="Unassigned"
-          cssClass=""
-          players={unassigned}
-          myId={myId}
-          hostId={room.host}
-        />
-        <TeamPanel
-          title={room.teamNames.blue}
-          cssClass="blue"
-          players={bluePlayers}
-          myId={myId}
-          hostId={room.host}
-        />
+        <p className="lobby-pick-heading">Pick your team</p>
+
+        <div className="lobby-teams-grid">
+          <TeamCard
+            team="red"
+            teamName={redName}
+            nameDraft={redNameDraft}
+            players={redPlayers}
+            myId={myId}
+            hostId={room.host}
+            isMine={me?.team === 'red'}
+            isHost={isHost}
+            onJoin={() => setTeam('red')}
+            onNameChange={setRedNameDraft}
+            onNameCommit={v => { commitTeamName('red', v); setRedNameDraft(null); }}
+          />
+          <TeamCard
+            team="blue"
+            teamName={blueName}
+            nameDraft={blueNameDraft}
+            players={bluePlayers}
+            myId={myId}
+            hostId={room.host}
+            isMine={me?.team === 'blue'}
+            isHost={isHost}
+            onJoin={() => setTeam('blue')}
+            onNameChange={setBlueNameDraft}
+            onNameCommit={v => { commitTeamName('blue', v); setBlueNameDraft(null); }}
+          />
+        </div>
+
+        {unassigned.length > 0 && (
+          <div className="lobby-unassigned-row">
+            <span className="lobby-unassigned-label">Unassigned</span>
+            {unassigned.map(p => (
+              <span key={p.id} className="lobby-unassigned-chip">
+                {p.name}{p.id === myId ? ' (you)' : ''}{!p.connected ? ' · offline' : ''}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {error && <p className="error-msg" role="alert">{error}</p>}
       </div>
 
-      {/* Start */}
-      {isHost ? (
-        <>
+      <div className="lobby-bottom-bar">
+        <button
+          className={'lobby-spectator-btn' + (me?.team === null ? ' is-mine' : '')}
+          onClick={() => setTeam(null)}
+        >
+          {me?.team === null ? 'Spectating' : 'Spectator'}
+        </button>
+
+        {isHost ? (
           <button
-            className={`btn ${canStart ? 'btn-primary' : 'btn-ghost'}`}
+            className={'lobby-start-btn' + (canStart ? ' is-promoted' : '')}
             onClick={startGame}
             disabled={!canStart || busy}
+            title={canStartReason ?? ''}
           >
-            Start game
+            {busy ? 'Starting...' : canStartReason ?? 'Start Game'}
           </button>
-          {canStartReason && <p className="info-line">{canStartReason}</p>}
-          <p className="info-line">Captains are picked randomly when the game starts.</p>
-        </>
-      ) : (
-        <p className="info-line">
-          Waiting for <strong>{room.players.find(p => p.id === room.host)?.name ?? 'the host'}</strong> to start the game.
-        </p>
-      )}
+        ) : (
+          <span className="fs-sub" style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            Waiting for&nbsp;
+            <strong style={{ color: 'var(--text)' }}>
+              {room.players.find(p => p.id === room.host)?.name ?? 'host'}
+            </strong>
+          </span>
+        )}
+      </div>
 
-      {error && <p className="error-msg" role="alert">{error}</p>}
-    </section>
+      {isHost && canStart && (
+        <div className="start-popup-wrapper">
+          <button className="start-popup-btn" onClick={startGame} disabled={busy}>
+            <span className="start-popup-eyebrow">Ready to play</span>
+            <span className="start-popup-title">{busy ? 'STARTING...' : 'START GAME'}</span>
+            <span className="start-popup-arrow">&gt;</span>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
-function TeamPanel({
-  title, cssClass, players, myId, hostId,
-}: { title: string; cssClass: string; players: Player[]; myId: string | null; hostId: string }) {
+type TeamCardProps = {
+  team: Team;
+  teamName: string;
+  nameDraft: string | null;
+  players: Player[];
+  myId: string | null;
+  hostId: string;
+  isMine: boolean;
+  isHost: boolean;
+  onJoin: () => void;
+  onNameChange: (v: string) => void;
+  onNameCommit: (v: string) => void;
+};
+
+function TeamCard({
+  team, teamName, nameDraft, players, myId, hostId, isMine, isHost, onJoin, onNameChange, onNameCommit,
+}: TeamCardProps) {
   return (
-    <div className={`team-panel ${cssClass}`}>
-      <p className="team-panel-title">{title} ({players.length})</p>
-      {players.length === 0 ? (
-        <p className="team-empty">Empty</p>
+    <div
+      className={'lobby-team-card lobby-team-card--' + team + (isMine ? ' is-mine' : '')}
+      onClick={!isMine ? onJoin : undefined}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => e.key === 'Enter' && !isMine && onJoin()}
+    >
+      {isHost ? (
+        <input
+          className="lobby-team-name-input"
+          value={nameDraft ?? teamName}
+          maxLength={24}
+          placeholder={team === 'red' ? 'Red' : 'Blue'}
+          onChange={e => onNameChange(e.target.value)}
+          onBlur={e => onNameCommit(e.target.value)}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+              onNameCommit((e.target as HTMLInputElement).value);
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          onClick={e => e.stopPropagation()}
+        />
       ) : (
-        <ul className="team-player-list">
-          {players.map(p => (
-            <li key={p.id} className={`team-player-item ${p.connected ? '' : 'offline'}`}>
-              <span>{p.name}</span>
-              {p.id === hostId  && <span className="player-tag">(host)</span>}
-              {p.id === myId    && <span className="player-tag">(you)</span>}
-              {!p.connected     && <span className="player-tag">(offline)</span>}
-            </li>
-          ))}
-        </ul>
+        <p className="lobby-team-name-display">{teamName}</p>
       )}
+
+      <div className="lobby-player-bubbles">
+        {players.length === 0 ? (
+          <div className="lobby-empty-state">empty — be the first</div>
+        ) : (
+          players.map(p => (
+            <span
+              key={p.id}
+              className={'lobby-player-bubble' + (p.id === myId ? ' is-me' : '') + (!p.connected ? ' is-offline' : '')}
+            >
+              {p.name}
+              {p.id === myId   && <span className="lobby-player-bubble-tag">you</span>}
+              {p.id === hostId && <span className="lobby-player-bubble-tag">host</span>}
+              {!p.connected    && <span className="lobby-player-bubble-tag">off</span>}
+            </span>
+          ))
+        )}
+      </div>
+
+      <button
+        className={'lobby-join-pill' + (isMine ? ' is-mine' : '')}
+        onClick={e => { e.stopPropagation(); if (!isMine) onJoin(); }}
+      >
+        {isMine ? "You're here" : 'Join ' + (team === 'red' ? 'Red' : 'Blue')}
+      </button>
     </div>
   );
 }
