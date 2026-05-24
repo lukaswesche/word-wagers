@@ -1,11 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0f1226"/>
-  <text
-    x="32" y="46"
-    text-anchor="middle"
-    font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Inter', sans-serif"
-    font-size="38"
-    font-weight="900"
-    fill="#7c5cfc"
-    letter-spacing="-3">WW</text>
+  <g fill="none" stroke="#7c5cfc" stroke-width="6"
+     stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="5,11  10.5,53  16,32  21.5,53  27,11"/>
+    <polyline points="37,11 42.5,53  48,32  53.5,53  59,11"/>
+  </g>
 </svg>
