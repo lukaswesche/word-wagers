@@ -25,6 +25,7 @@ function Board({
   return (
     <div className="board">
       {words.map((word, i) => {
+        const display = word.replace(/_/g, ' ');
         if (reveal) {
           const isTarget = targetSet.has(word);
           const isGuess  = guessSet.has(word);
@@ -36,7 +37,7 @@ function Board({
 
           return (
             <div key={`${i}-${word}`} className={`board-tile ${stateClass}`}>
-              <span>{word}</span>
+              <span>{display}</span>
               {badge && <span className="tile-badge">{badge}</span>}
             </div>
           );
@@ -59,7 +60,7 @@ function Board({
             onClick={() => clickable && onToggle?.(word)}
             disabled={selectable && !clickable}
           >
-            {word}
+            {display}
           </button>
         );
       })}
