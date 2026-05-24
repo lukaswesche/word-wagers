@@ -84,51 +84,53 @@ function Lobby({ room, myId }: Props) {
         </div>
       </div>
 
-      {/* Team name inputs */}
-      <div className="team-names-row">
-        <div className="team-name-field">
-          <label htmlFor="red-team-name">Red team name</label>
-          <input
-            id="red-team-name"
-            className="team-name-input red-team"
-            value={redName}
-            maxLength={24}
-            onChange={e => setRedNameDraft(e.target.value)}
-            onBlur={e => {
-              commitTeamName('red', e.target.value);
-              setRedNameDraft(null);
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                commitTeamName('red', (e.target as HTMLInputElement).value);
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            placeholder="Red"
-          />
+      {/* Team name inputs — host only */}
+      {isHost && (
+        <div className="team-names-row">
+          <div className="team-name-field">
+            <label htmlFor="red-team-name">Red team name</label>
+            <input
+              id="red-team-name"
+              className="team-name-input red-team"
+              value={redName}
+              maxLength={24}
+              onChange={e => setRedNameDraft(e.target.value)}
+              onBlur={e => {
+                commitTeamName('red', e.target.value);
+                setRedNameDraft(null);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  commitTeamName('red', (e.target as HTMLInputElement).value);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              placeholder="Red"
+            />
+          </div>
+          <div className="team-name-field">
+            <label htmlFor="blue-team-name">Blue team name</label>
+            <input
+              id="blue-team-name"
+              className="team-name-input blue-team"
+              value={blueName}
+              maxLength={24}
+              onChange={e => setBlueNameDraft(e.target.value)}
+              onBlur={e => {
+                commitTeamName('blue', e.target.value);
+                setBlueNameDraft(null);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  commitTeamName('blue', (e.target as HTMLInputElement).value);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              placeholder="Blue"
+            />
+          </div>
         </div>
-        <div className="team-name-field">
-          <label htmlFor="blue-team-name">Blue team name</label>
-          <input
-            id="blue-team-name"
-            className="team-name-input blue-team"
-            value={blueName}
-            maxLength={24}
-            onChange={e => setBlueNameDraft(e.target.value)}
-            onBlur={e => {
-              commitTeamName('blue', e.target.value);
-              setBlueNameDraft(null);
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                commitTeamName('blue', (e.target as HTMLInputElement).value);
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            placeholder="Blue"
-          />
-        </div>
-      </div>
+      )}
 
       {/* Team columns */}
       <div className="team-grid">
@@ -137,18 +139,21 @@ function Lobby({ room, myId }: Props) {
           cssClass="red"
           players={redPlayers}
           myId={myId}
+          hostId={room.host}
         />
         <TeamPanel
           title="Unassigned"
           cssClass=""
           players={unassigned}
           myId={myId}
+          hostId={room.host}
         />
         <TeamPanel
           title={room.teamNames.blue}
           cssClass="blue"
           players={bluePlayers}
           myId={myId}
+          hostId={room.host}
         />
       </div>
 
@@ -177,8 +182,8 @@ function Lobby({ room, myId }: Props) {
 }
 
 function TeamPanel({
-  title, cssClass, players, myId,
-}: { title: string; cssClass: string; players: Player[]; myId: string | null }) {
+  title, cssClass, players, myId, hostId,
+}: { title: string; cssClass: string; players: Player[]; myId: string | null; hostId: string }) {
   return (
     <div className={`team-panel ${cssClass}`}>
       <p className="team-panel-title">{title} ({players.length})</p>
@@ -189,6 +194,7 @@ function TeamPanel({
           {players.map(p => (
             <li key={p.id} className={`team-player-item ${p.connected ? '' : 'offline'}`}>
               <span>{p.name}</span>
+              {p.id === hostId  && <span className="player-tag">(host)</span>}
               {p.id === myId    && <span className="player-tag">(you)</span>}
               {!p.connected     && <span className="player-tag">(offline)</span>}
             </li>

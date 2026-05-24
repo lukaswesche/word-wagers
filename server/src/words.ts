@@ -63,7 +63,7 @@ export const WORDS: readonly string[] = [
   'VOLCANO', 'WAGON', 'WALL', 'WAND', 'WATCH', 'WATER',
   'WAVE', 'WEB', 'WHALE', 'WHEEL', 'WINDOW', 'WING',
   'WINTER', 'WITCH', 'WIZARD', 'WOLF', 'WOOD', 'WORM',
-  'YACHT', 'YARN', 'ZEBRA',
+  'YACHT', 'YARN', 'ZEBRA', 'Ben is a bitch', 'Luke loves BBC'
 ];
 
 export function pickRandomWords(count: number): string[] {

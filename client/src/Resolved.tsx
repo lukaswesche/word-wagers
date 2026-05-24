@@ -26,6 +26,8 @@ function Resolved({ room, myId }: Props) {
   const myTeam      = me?.team ?? null;
   const iWon        = myTeam !== null && myTeam === resolution.winner;
   const isLoser     = myTeam !== null && !iWon;
+  const isHost      = myId === room.host;
+  const hostName    = room.players.find(p => p.id === room.host)?.name ?? 'the host';
   const correctCount = resolution.guesses.filter(g => resolution.targets.includes(g)).length;
   const resultClass  = myTeam === null ? 'neutral' : iWon ? 'win' : 'lose';
 
@@ -109,12 +111,20 @@ function Resolved({ room, myId }: Props) {
         </div>
       )}
 
-      {/* Play again */}
+      {/* Play again — host only */}
       <div style={{ textAlign: 'center' }}>
-        <button className="btn btn-primary" onClick={playAgain} disabled={busy}>
-          Play again
-        </button>
-        <p className="info-line mt-1">Same teams. Captains and board re-rolled.</p>
+        {isHost ? (
+          <>
+            <button className="btn btn-primary" onClick={playAgain} disabled={busy}>
+              Play again
+            </button>
+            <p className="info-line mt-1">Same teams. Captains and board re-rolled.</p>
+          </>
+        ) : (
+          <p className="info-line">
+            Waiting for <strong>{hostName}</strong> to start the next round…
+          </p>
+        )}
       </div>
 
       {error && <p className="error-msg" role="alert">{error}</p>}
