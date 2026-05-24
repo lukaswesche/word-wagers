@@ -51,6 +51,7 @@ type Room = {
   performerTargets: string[] | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
+  scores: { red: number; blue: number };
   teamClocks: TeamClocks;
   timerId: NodeJS.Timeout | null; // server-only, fires when active team's clock hits 0
   createdAt: number;
@@ -126,6 +127,7 @@ export class RoomManager {
       performerTargets: null,
       teamNames: { red: 'Red', blue: 'Blue' },
       taunt: null,
+      scores: { red: 0, blue: 0 },
       teamClocks: freshClocks(),
       timerId: null,
       createdAt: Date.now(),
@@ -392,6 +394,7 @@ export class RoomManager {
     };
 
     room.phase = 'resolved';
+    room.scores[room.resolution.winner]++;
     this.pauseAllClocks(room);
     return room;
   }
@@ -437,6 +440,7 @@ export class RoomManager {
       resolution: room.resolution,
       teamNames: room.teamNames,
       taunt: room.taunt,
+      scores: { ...room.scores },
       teamClocks: cloneClocks(room.teamClocks),
     };
   }
@@ -500,6 +504,7 @@ export class RoomManager {
       guesses: room.guessing ? [...room.guessing.pendingGuesses] : null,
     };
     room.phase = 'resolved';
+    room.scores[winner]++;
 
     this.onRoomChange?.(room);
   }
