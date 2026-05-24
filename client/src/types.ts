@@ -99,16 +99,15 @@ export function teamLabel(team: Team): string {
   return team === 'red' ? 'Red' : 'Blue';
 }
 
-// Time-limit options shown to the host (must match server's ALLOWED_TIMEOUTS).
-export const TIME_LIMIT_OPTIONS: { value: number | null; label: string }[] = [
-  { value: null, label: 'No limit' },
-  { value: 30, label: '30 seconds' },
-  { value: 60, label: '1 minute' },
-  { value: 90, label: '90 seconds' },
-  { value: 120, label: '2 minutes' },
-];
+// Server-enforced bounds. Must match server's MIN/MAX_TIMEOUT_SECONDS.
+export const MIN_TIMEOUT_SECONDS = 5;
+export const MAX_TIMEOUT_SECONDS = 3600;
 
 export function formatTimeLimit(seconds: number | null): string {
-  const opt = TIME_LIMIT_OPTIONS.find((o) => o.value === seconds);
-  return opt?.label ?? (seconds === null ? 'No limit' : `${seconds}s`);
+  if (seconds === null) return 'No limit';
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (s === 0) return m === 1 ? '1 min' : `${m} min`;
+  return `${m}m ${s}s`;
 }

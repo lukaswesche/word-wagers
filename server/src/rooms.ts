@@ -21,8 +21,9 @@ const MIN_PER_TEAM = 2;
 const MIN_OPENING_BID = 2;
 const MAX_HINT_LENGTH = 30;
 
-// Allowed time-limit options the host can pick (seconds; null = no limit)
-const ALLOWED_TIMEOUTS: readonly (number | null)[] = [null, 30, 60, 90, 120];
+// Time limit bounds. null = no limit; otherwise must be a positive integer in this range.
+const MIN_TIMEOUT_SECONDS = 5;
+const MAX_TIMEOUT_SECONDS = 3600;
 
 type InternalPlayer = {
   playerId: string;
@@ -196,8 +197,11 @@ export class RoomManager {
     const room = this.requireRoomForPlayer(playerId);
     if (room.phase !== 'lobby') throw new Error('Time limit can only be changed in the lobby');
     if (playerId !== room.host) throw new Error('Only the host can change the time limit');
-    if (!ALLOWED_TIMEOUTS.includes(seconds)) {
-      throw new Error('Invalid time limit');
+    if (seconds !== null) {
+      if (!Number.isInteger(seconds)) throw new Error('Time limit must be a whole number of seconds');
+      if (seconds < MIN_TIMEOUT_SECONDS || seconds > MAX_TIMEOUT_SECONDS) {
+        throw new Error(`Time limit must be between ${MIN_TIMEOUT_SECONDS} and ${MAX_TIMEOUT_SECONDS} seconds`);
+      }
     }
     room.settings.roundTimeoutSeconds = seconds;
     return room;
