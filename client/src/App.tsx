@@ -61,18 +61,11 @@ function App() {
         <button
           type="button"
           className="corner-btn"
-          onClick={() => setMode(m => m === 'dark' ? 'light' : 'dark')}
-          title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          {mode === 'dark' ? '☀️' : '🌙'}
-        </button>
-        <button
-          type="button"
-          className="corner-btn"
           onClick={() => setSettingsOpen(o => !o)}
           title="Settings"
+          aria-label="Settings"
         >
-          ⚙️
+          ≡
         </button>
       </div>
 

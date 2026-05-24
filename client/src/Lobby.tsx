@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { socket } from './socket';
 import RoomHeader from './RoomHeader';
 import {
-  MAX_TIMEOUT_SECONDS,
   MIN_TIMEOUT_SECONDS,
   formatTimeLimit,
   type AckResponse,
@@ -20,7 +19,7 @@ function Lobby({ room, myId }: Props) {
   // Local drafts for editable fields so typing feels instant
   const [redNameDraft,    setRedNameDraft]    = useState<string | null>(null);
   const [blueNameDraft,   setBlueNameDraft]   = useState<string | null>(null);
-  const [timeLimitDraft,  setTimeLimitDraft]  = useState<string | null>(null);
+  const [sliderDraft,     setSliderDraft]     = useState<number | null>(null);
 
   const me          = room.players.find(p => p.id === myId) ?? null;
   const redPlayers  = room.players.filter(p => p.team === 'red');
@@ -47,24 +46,6 @@ function Lobby({ room, myId }: Props) {
     socket.emit('set-time-limit', { seconds }, (res: AckResponse) => {
       if (!res.ok) setError(res.error);
     });
-  };
-
-  const commitTimeLimit = (raw: string) => {
-    const trimmed = raw.trim();
-    if (trimmed === '') {
-      setTimeLimit(null);
-      return;
-    }
-    const n = parseInt(trimmed, 10);
-    if (!Number.isFinite(n) || n <= 0) {
-      setError('Time limit must be a positive number, or empty for no limit');
-      return;
-    }
-    if (n < MIN_TIMEOUT_SECONDS || n > MAX_TIMEOUT_SECONDS) {
-      setError(`Time limit must be between ${MIN_TIMEOUT_SECONDS} and ${MAX_TIMEOUT_SECONDS} seconds`);
-      return;
-    }
-    setTimeLimit(n);
   };
 
   const startGame = () => {
@@ -219,119 +200,63 @@ function Lobby({ room, myId }: Props) {
 
       {/* ── Host Settings (host only) ── */}
       {isHost && (
-        <div
-          style={{
-            marginTop: '1.75rem',
-            padding: '1rem 1.1rem',
-            background: 'var(--surface-soft)',
-            border: '1px solid var(--border)',
-            borderRadius: '14px',
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              fontSize: '0.72rem',
-              fontWeight: 800,
-              color: 'var(--muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.14em',
-              marginBottom: '0.85rem',
-            }}
-          >
-            Host Settings
-          </p>
+        <div className="host-settings-card">
+          <p className="host-settings-title">Host Settings</p>
 
-          {/* Time limit input — a small, self-contained sub-card */}
-          <div
-            style={{
-              padding: '0.75rem 0.9rem',
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '10px',
-            }}
-          >
-            <label
-              htmlFor="time-limit-input"
-              style={{
-                display: 'block',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                color: 'var(--text)',
-                marginBottom: '0.35rem',
-              }}
-            >
-              Time limit per decision
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input
-                id="time-limit-input"
-                type="number"
-                inputMode="numeric"
-                min={MIN_TIMEOUT_SECONDS}
-                max={MAX_TIMEOUT_SECONDS}
-                value={
-                  timeLimitDraft !== null
-                    ? timeLimitDraft
-                    : room.settings.roundTimeoutSeconds === null
-                      ? ''
-                      : String(room.settings.roundTimeoutSeconds)
-                }
-                onChange={(e) => setTimeLimitDraft(e.target.value)}
-                onBlur={(e) => {
-                  commitTimeLimit(e.target.value);
-                  setTimeLimitDraft(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    commitTimeLimit((e.target as HTMLInputElement).value);
-                    (e.target as HTMLInputElement).blur();
-                  }
-                }}
-                placeholder="empty = no limit"
-                style={{
-                  width: '7rem',
-                  padding: '0.45rem 0.7rem',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  background: 'var(--surface-soft)',
-                  color: 'var(--text)',
-                  fontSize: '0.95rem',
-                  fontWeight: 600,
-                  fontVariantNumeric: 'tabular-nums',
-                  outline: 'none',
-                }}
-              />
-              <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                seconds
-              </span>
-              <span
-                style={{
-                  marginLeft: 'auto',
-                  padding: '0.3rem 0.7rem',
-                  borderRadius: '999px',
-                  background: 'rgba(124, 92, 252, 0.13)',
-                  border: '1px solid rgba(124, 92, 252, 0.28)',
-                  color: 'var(--text)',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                }}
-              >
-                {formatTimeLimit(room.settings.roundTimeoutSeconds)}
-              </span>
-            </div>
-            <p
-              style={{
-                margin: '0.5rem 0 0',
-                fontSize: '0.75rem',
-                color: 'var(--muted)',
-                lineHeight: 1.45,
-              }}
-            >
-              Min {MIN_TIMEOUT_SECONDS}s, max {MAX_TIMEOUT_SECONDS}s. Leave empty for no limit.
-              If a player runs out of time, their team loses the round.
-            </p>
-          </div>
+          {/* Time limit slider — sentinel value (SLIDER_MAX) means "No limit" */}
+          {(() => {
+            const SLIDER_MIN = MIN_TIMEOUT_SECONDS;     // 5
+            const SLIDER_MAX = 305;                     // rightmost = No limit
+            const SLIDER_STEP = 5;
+            const stored = room.settings.roundTimeoutSeconds;
+            const liveValue =
+              sliderDraft !== null
+                ? sliderDraft
+                : stored === null
+                  ? SLIDER_MAX
+                  : Math.min(Math.max(stored, SLIDER_MIN), SLIDER_MAX);
+            const isNoLimit = liveValue >= SLIDER_MAX;
+            const displayLabel = isNoLimit ? 'No limit' : formatTimeLimit(liveValue);
+
+            const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+              setSliderDraft(Number(e.target.value));
+            };
+            const commit = (e: React.SyntheticEvent<HTMLInputElement>) => {
+              const v = Number((e.target as HTMLInputElement).value);
+              setTimeLimit(v >= SLIDER_MAX ? null : v);
+              setSliderDraft(null);
+            };
+
+            return (
+              <div className="host-setting-row">
+                <div className="host-setting-label">
+                  <span className="host-setting-name">Time limit per decision</span>
+                  <span className="host-setting-value">{displayLabel}</span>
+                </div>
+                <input
+                  type="range"
+                  className="host-slider"
+                  min={SLIDER_MIN}
+                  max={SLIDER_MAX}
+                  step={SLIDER_STEP}
+                  value={liveValue}
+                  onChange={onChange}
+                  onPointerUp={commit}
+                  onKeyUp={commit}
+                  aria-label="Time limit per decision in seconds"
+                />
+                <div className="host-setting-marks">
+                  <span>5s</span>
+                  <span>5 min</span>
+                  <span>No limit</span>
+                </div>
+                <p className="host-setting-hint">
+                  If a player runs out of time on their turn, their team loses the round.
+                  Slide all the way right for no limit.
+                </p>
+              </div>
+            );
+          })()}
         </div>
       )}
     </section>

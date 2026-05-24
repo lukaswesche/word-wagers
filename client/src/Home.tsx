@@ -69,7 +69,7 @@ function Home() {
 
         {/* Create */}
         <div className="home-action-card create-card">
-          <div className="action-card-icon">✦</div>
+          <div className="action-card-icon">+</div>
           <div className="action-card-title">Create a room</div>
           <div className="action-card-desc">Start a new game and invite your friends with a shareable code.</div>
           <button
@@ -83,7 +83,7 @@ function Home() {
 
         {/* Join */}
         <div className="home-action-card join-card">
-          <div className="action-card-icon">⤵</div>
+          <div className="action-card-icon">&gt;</div>
           <div className="action-card-title">Join a room</div>
           <div className="action-card-desc">Have a code? Jump straight into an existing game.</div>
           <input

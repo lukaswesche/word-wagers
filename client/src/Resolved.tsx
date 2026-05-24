@@ -74,7 +74,7 @@ function Resolved({ room, myId }: Props) {
       {/* Result card */}
       <div className={`result-card ${resultClass}`}>
         <p className="result-outcome">
-          {myTeam ? (iWon ? 'You win 🎉' : 'You lose') : 'Round result'}
+          {myTeam ? (iWon ? 'You win' : 'You lose') : 'Round result'}
         </p>
         <h2 className={`result-winner ${resolution.winner}`}>
           {teamDisplayLabel(resolution.winner)} wins
@@ -105,7 +105,7 @@ function Resolved({ room, myId }: Props) {
       {/* Taunt composer — only for winners, only if no taunt yet */}
       {iWon && !room.taunt && (
         <div className="taunt-composer">
-          <p className="taunt-composer-label">🐐 Send a victory message to {loserName}</p>
+          <p className="taunt-composer-label">Send a victory message to {loserName}</p>
           <textarea
             className="taunt-input"
             value={tauntMsg}
@@ -119,7 +119,7 @@ function Resolved({ room, myId }: Props) {
             onClick={sendTaunt}
             disabled={tauntBusy || !tauntMsg.trim()}
           >
-            {tauntBusy ? 'Sending…' : 'SEND IT 🐐'}
+            {tauntBusy ? 'Sending…' : 'SEND IT'}
           </button>
           {tauntError && <p className="error-msg" role="alert">{tauntError}</p>}
         </div>
@@ -128,7 +128,7 @@ function Resolved({ room, myId }: Props) {
       {/* Winner confirmation after taunt sent */}
       {iWon && room.taunt && (
         <div className="taunt-sent-confirm">
-          🏆 Message delivered — {loserName} has been notified
+          Message delivered — {loserName} has been notified
         </div>
       )}
 
@@ -178,8 +178,6 @@ function Resolved({ room, myId }: Props) {
           onClick={() => setTauntDismissed(true)}
         >
           <div className="taunt-inner" onClick={e => e.stopPropagation()}>
-            <div className="taunt-emoji">{isLoser ? '🐐' : '🏆'}</div>
-
             <div className="taunt-header">
               {isLoser
                 ? `${winnerName} says:`
@@ -196,7 +194,7 @@ function Resolved({ room, myId }: Props) {
               className="taunt-dismiss-btn"
               onClick={() => setTauntDismissed(true)}
             >
-              {isLoser ? '😤 cry about it' : '💪 absolute unit'}
+              {isLoser ? 'cry about it' : 'absolute unit'}
             </button>
           </div>
         </div>
