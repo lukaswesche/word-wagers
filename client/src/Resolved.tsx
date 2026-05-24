@@ -144,25 +144,38 @@ function Resolved({ room, myId }: Props) {
             </div>
           )}
 
+          {/* Series scoreboard */}
+          <div className="series-scoreboard">
+            <div className="series-team series-team-red">
+              <span className="series-team-name">{redName}</span>
+              <span className="series-team-score">{room.scores.red}</span>
+            </div>
+            <div className="series-vs">
+              <span className="series-vs-label">SERIES</span>
+              <span className="series-vs-dash">—</span>
+            </div>
+            <div className="series-team series-team-blue">
+              <span className="series-team-score">{room.scores.blue}</span>
+              <span className="series-team-name">{blueName}</span>
+            </div>
+          </div>
+
           <div style={{ textAlign: 'center' }}>
             {isHost ? (
-              <>
-                <button
-                  className="btn btn-primary"
-                  onClick={playAgain}
-                  disabled={busy}
-                  style={{ width: '100%', padding: '1rem', fontSize: '1rem', fontWeight: 800, letterSpacing: '0.06em' }}
-                >
-                  Play Again
-                </button>
-                <p className="info-line" style={{ marginTop: '0.5rem' }}>
-                  Same teams. Captains and board re-rolled.
-                </p>
-              </>
+              <button
+                className="play-again-btn"
+                onClick={playAgain}
+                disabled={busy}
+              >
+                <span className="play-again-icon">⚡</span>
+                <span className="play-again-text">{busy ? 'Starting...' : 'Play Again'}</span>
+                <span className="play-again-sub">Same teams · New board</span>
+              </button>
             ) : (
-              <p className="info-line">
-                Waiting for <strong>{hostName}</strong> to start the next round...
-              </p>
+              <div className="play-again-waiting">
+                <span className="play-again-waiting-dot" />
+                <span>Waiting for <strong>{hostName}</strong> to start the next round...</span>
+              </div>
             )}
           </div>
 

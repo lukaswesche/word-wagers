@@ -90,6 +90,7 @@ export type RoomState = {
   resolution: Resolution | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
+  scores: { red: number; blue: number };
   teamClocks: TeamClocks;
 };
 
