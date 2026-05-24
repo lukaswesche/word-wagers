@@ -16,7 +16,6 @@ import type {
   SendTauntPayload,
   SetTeamNamePayload,
   SetTeamPayload,
-  SetTimeLimitPayload,
   StartGamePayload,
   SubmitGuessesPayload,
   SubmitTargetsAndHintPayload,
@@ -276,26 +275,6 @@ io.on('connection', (socket) => {
         const name = payload?.name;
         if (team !== 'red' && team !== 'blue') return ack({ ok: false, error: 'Invalid team' });
         const room = rooms.setTeamName(playerId, team, name);
-        ack({ ok: true });
-        io.to(room.code).emit('room-state', rooms.toRoomState(room));
-      } catch (e) {
-        ack({ ok: false, error: errorMessage(e) });
-      }
-    },
-  );
-
-  socket.on(
-    'set-time-limit',
-    (payload: SetTimeLimitPayload, ack: (response: AckResponse) => void) => {
-      const playerId = requireIdentified(socket.id);
-      if (!playerId) return ack({ ok: false, error: 'Not identified' });
-      try {
-        const raw = payload?.seconds;
-        const seconds = raw === null || raw === undefined ? null : Number(raw);
-        if (seconds !== null && !Number.isFinite(seconds)) {
-          return ack({ ok: false, error: 'Invalid time limit' });
-        }
-        const room = rooms.setTimeLimit(playerId, seconds);
         ack({ ok: true });
         io.to(room.code).emit('room-state', rooms.toRoomState(room));
       } catch (e) {

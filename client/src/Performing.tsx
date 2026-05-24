@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
 import RoomHeader from './RoomHeader';
-import CountdownTimer from './CountdownTimer';
+import TeamClocks from './TeamClocks';
 import { teamLabel, type AckResponse, type RoomState } from './types';
 
 type Props = { room: RoomState; myId: string | null };
@@ -42,15 +42,13 @@ function Performing({ room, myId }: Props) {
   return (
     <section>
       <RoomHeader code={room.code} />
+      <TeamClocks room={room} />
 
       {/* Phase banner */}
       <div className={`phase-banner team-${teamClass}`}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <p className={`phase-chip team-${teamClass}`} style={{ margin: 0 }}>
-            Performer — {teamLabel(performing.team)} team
-          </p>
-          <CountdownTimer deadline={room.turnDeadline} />
-        </div>
+        <p className={`phase-chip team-${teamClass}`}>
+          Performer — {teamLabel(performing.team)} team
+        </p>
         <p className="phase-title">
           {performer?.name ?? '?'}
           {!performer?.connected && <span className="player-tag" style={{ color: 'var(--red)', marginLeft: '0.4rem' }}>(offline)</span>}

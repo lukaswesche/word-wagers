@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { socket } from './socket';
 import RoomHeader from './RoomHeader';
 import {
-  MIN_TIMEOUT_SECONDS,
-  formatTimeLimit,
   type AckResponse,
   type Player,
   type RoomState,
@@ -19,7 +17,6 @@ function Lobby({ room, myId }: Props) {
   // Local drafts for editable fields so typing feels instant
   const [redNameDraft,    setRedNameDraft]    = useState<string | null>(null);
   const [blueNameDraft,   setBlueNameDraft]   = useState<string | null>(null);
-  const [sliderDraft,     setSliderDraft]     = useState<number | null>(null);
 
   const me          = room.players.find(p => p.id === myId) ?? null;
   const redPlayers  = room.players.filter(p => p.team === 'red');
@@ -37,13 +34,6 @@ function Lobby({ room, myId }: Props) {
     const val = name.trim();
     if (!val) return;
     socket.emit('set-team-name', { team, name: val }, (res: AckResponse) => {
-      if (!res.ok) setError(res.error);
-    });
-  };
-
-  const setTimeLimit = (seconds: number | null) => {
-    setError(null);
-    socket.emit('set-time-limit', { seconds }, (res: AckResponse) => {
       if (!res.ok) setError(res.error);
     });
   };
@@ -186,79 +176,12 @@ function Lobby({ room, myId }: Props) {
           <p className="info-line">Captains are picked randomly when the game starts.</p>
         </>
       ) : (
-        <>
-          <p className="info-line">
-            Waiting for <strong>{room.players.find(p => p.id === room.host)?.name ?? 'the host'}</strong> to start the game.
-          </p>
-          <p className="info-line" style={{ fontSize: '0.8rem' }}>
-            Round timer: <strong>{formatTimeLimit(room.settings.roundTimeoutSeconds)}</strong>
-          </p>
-        </>
+        <p className="info-line">
+          Waiting for <strong>{room.players.find(p => p.id === room.host)?.name ?? 'the host'}</strong> to start the game.
+        </p>
       )}
 
       {error && <p className="error-msg" role="alert">{error}</p>}
-
-      {/* ── Host Settings (host only) ── */}
-      {isHost && (
-        <div className="host-settings-card">
-          <p className="host-settings-title">Host Settings</p>
-
-          {/* Time limit slider — sentinel value (SLIDER_MAX) means "No limit" */}
-          {(() => {
-            const SLIDER_MIN = MIN_TIMEOUT_SECONDS;     // 5
-            const SLIDER_MAX = 305;                     // rightmost = No limit
-            const SLIDER_STEP = 5;
-            const stored = room.settings.roundTimeoutSeconds;
-            const liveValue =
-              sliderDraft !== null
-                ? sliderDraft
-                : stored === null
-                  ? SLIDER_MAX
-                  : Math.min(Math.max(stored, SLIDER_MIN), SLIDER_MAX);
-            const isNoLimit = liveValue >= SLIDER_MAX;
-            const displayLabel = isNoLimit ? 'No limit' : formatTimeLimit(liveValue);
-
-            const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-              setSliderDraft(Number(e.target.value));
-            };
-            const commit = (e: React.SyntheticEvent<HTMLInputElement>) => {
-              const v = Number((e.target as HTMLInputElement).value);
-              setTimeLimit(v >= SLIDER_MAX ? null : v);
-              setSliderDraft(null);
-            };
-
-            return (
-              <div className="host-setting-row">
-                <div className="host-setting-label">
-                  <span className="host-setting-name">Time limit per decision</span>
-                  <span className="host-setting-value">{displayLabel}</span>
-                </div>
-                <input
-                  type="range"
-                  className="host-slider"
-                  min={SLIDER_MIN}
-                  max={SLIDER_MAX}
-                  step={SLIDER_STEP}
-                  value={liveValue}
-                  onChange={onChange}
-                  onPointerUp={commit}
-                  onKeyUp={commit}
-                  aria-label="Time limit per decision in seconds"
-                />
-                <div className="host-setting-marks">
-                  <span>5s</span>
-                  <span>5 min</span>
-                  <span>No limit</span>
-                </div>
-                <p className="host-setting-hint">
-                  If a player runs out of time on their turn, their team loses the round.
-                  Slide all the way right for no limit.
-                </p>
-              </div>
-            );
-          })()}
-        </div>
-      )}
     </section>
   );
 }

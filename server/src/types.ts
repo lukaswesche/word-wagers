@@ -38,7 +38,20 @@ export type GuessingState = {
   pendingGuesses: string[];
 };
 
-// Discriminated union: timeouts don't have all the normal fields populated.
+// Chess-clock state for a single team. `remainingMs` is the snapshot at the
+// time `runningSince` was set (or the last pause). If `runningSince` is null,
+// the clock is paused with that exact remainingMs. If it's set, current
+// remaining = remainingMs - (Date.now() - runningSince).
+export type TeamClock = {
+  remainingMs: number;
+  runningSince: number | null;
+};
+
+export type TeamClocks = {
+  red: TeamClock;
+  blue: TeamClock;
+};
+
 export type Resolution =
   | {
       reason: 'normal';
@@ -53,8 +66,7 @@ export type Resolution =
       reason: 'timeout';
       winner: Team;
       timedOutTeam: Team;
-      timedOutPhase: 'bidding' | 'performing' | 'guessing';
-      // Best-effort snapshots of partial state at timeout (may be null if not yet set):
+      // Best-effort snapshots of partial state at timeout (may be null):
       performerTeam: Team | null;
       bidCount: number | null;
       hint: string | null;
@@ -67,11 +79,6 @@ export type Taunt = {
   fromName: string;
   message: string;
   winnerTeam: Team;
-};
-
-export type RoomSettings = {
-  // null = no time limit
-  roundTimeoutSeconds: number | null;
 };
 
 export type RoomState = {
@@ -87,9 +94,7 @@ export type RoomState = {
   resolution: Resolution | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
-  settings: RoomSettings;
-  // Unix ms timestamp by which the current decision must be made; null if no limit
-  turnDeadline: number | null;
+  teamClocks: TeamClocks;
 };
 
 export type CreateRoomPayload = { name: string };
@@ -105,7 +110,6 @@ export type PlayAgainPayload      = Record<string, never>;
 export type LeaveRoomPayload      = Record<string, never>;
 export type SetTeamNamePayload    = { team: Team; name: string };
 export type SendTauntPayload      = { message: string };
-export type SetTimeLimitPayload   = { seconds: number | null };
 
 export type AckResponse<T = unknown> =
   | ({ ok: true } & T)

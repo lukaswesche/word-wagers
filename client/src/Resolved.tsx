@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { socket } from './socket';
 import Board from './Board';
 import RoomHeader from './RoomHeader';
+import TeamClocks from './TeamClocks';
 import { type AckResponse, type RoomState, type Team } from './types';
 
 type Props = { room: RoomState; myId: string | null };
@@ -70,6 +71,7 @@ function Resolved({ room, myId }: Props) {
   return (
     <section>
       <RoomHeader code={room.code} />
+      <TeamClocks room={room} />
 
       {/* Result card */}
       <div className={`result-card ${resultClass}`}>
@@ -81,8 +83,7 @@ function Resolved({ room, myId }: Props) {
         </h2>
         {resolution.reason === 'timeout' ? (
           <p className="result-summary">
-            <strong>{teamDisplayLabel(resolution.timedOutTeam)}</strong> ran out of time during the{' '}
-            <strong>{resolution.timedOutPhase}</strong> phase.
+            <strong>{teamDisplayLabel(resolution.timedOutTeam)}</strong> ran out of time.
             {hint && (
               <>
                 {' '}Hint was{' '}

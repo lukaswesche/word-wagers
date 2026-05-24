@@ -6,10 +6,11 @@ import type {
   PerformingState,
   Player,
   Resolution,
-  RoomSettings,
   RoomState,
   Taunt,
   Team,
+  TeamClock,
+  TeamClocks,
 } from './types.js';
 import { pickRandomWords } from './words.js';
 
@@ -21,9 +22,13 @@ const MIN_PER_TEAM = 2;
 const MIN_OPENING_BID = 2;
 const MAX_HINT_LENGTH = 30;
 
-// Time limit bounds. null = no limit; otherwise must be a positive integer in this range.
-const MIN_TIMEOUT_SECONDS = 5;
-const MAX_TIMEOUT_SECONDS = 3600;
+// Fixed per-team time budget. Each team has this much time across the entire
+// round (bidding turns + performing + guessing). When a team's clock hits 0
+// they lose. The clock runs only when it's "that team's turn to act":
+//   - bidding phase: the team whose captain must bid or challenge next
+//   - performing phase: the performer's team
+//   - guessing phase: the performer's team (guessers picking words)
+const TEAM_TIME_BUDGET_MS = 3 * 60 * 1000; // 3 minutes
 
 type InternalPlayer = {
   playerId: string;
@@ -46,9 +51,8 @@ type Room = {
   performerTargets: string[] | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
-  settings: RoomSettings;
-  turnDeadline: number | null;
-  timerId: NodeJS.Timeout | null; // server-only, never broadcast
+  teamClocks: TeamClocks;
+  timerId: NodeJS.Timeout | null; // server-only, fires when active team's clock hits 0
   createdAt: number;
 };
 
@@ -122,8 +126,7 @@ export class RoomManager {
       performerTargets: null,
       teamNames: { red: 'Red', blue: 'Blue' },
       taunt: null,
-      settings: { roundTimeoutSeconds: null },
-      turnDeadline: null,
+      teamClocks: freshClocks(),
       timerId: null,
       createdAt: Date.now(),
     };
@@ -162,7 +165,7 @@ export class RoomManager {
 
     room.players = room.players.filter((p) => p.playerId !== playerId);
     if (room.players.length === 0) {
-      this.clearTurnTimer(room);
+      this.clearRoomTimer(room);
       this.rooms.delete(code);
       return null;
     }
@@ -190,20 +193,6 @@ export class RoomManager {
     const clean = name.trim().slice(0, 24);
     if (!clean) throw new Error('Team name cannot be empty');
     room.teamNames[team] = clean;
-    return room;
-  }
-
-  setTimeLimit(playerId: string, seconds: number | null): Room {
-    const room = this.requireRoomForPlayer(playerId);
-    if (room.phase !== 'lobby') throw new Error('Time limit can only be changed in the lobby');
-    if (playerId !== room.host) throw new Error('Only the host can change the time limit');
-    if (seconds !== null) {
-      if (!Number.isInteger(seconds)) throw new Error('Time limit must be a whole number of seconds');
-      if (seconds < MIN_TIMEOUT_SECONDS || seconds > MAX_TIMEOUT_SECONDS) {
-        throw new Error(`Time limit must be between ${MIN_TIMEOUT_SECONDS} and ${MAX_TIMEOUT_SECONDS} seconds`);
-      }
-    }
-    room.settings.roundTimeoutSeconds = seconds;
     return room;
   }
 
@@ -263,9 +252,10 @@ export class RoomManager {
 
     const bid: Bid = { team: turn, count };
     room.bidding.history.push(bid);
-    room.bidding.currentTurn = turn === 'red' ? 'blue' : 'red';
-    // Restart timer for the new turn
-    this.startTurnTimer(room);
+    const next: Team = turn === 'red' ? 'blue' : 'red';
+    room.bidding.currentTurn = next;
+    // The other team's clock now starts; this team's pauses
+    this.switchActiveTo(room, next);
     return room;
   }
 
@@ -292,7 +282,8 @@ export class RoomManager {
       bidCount: lastBid.count,
       hint: null,
     };
-    this.startTurnTimer(room);
+    // The challenger was active; now the performer's team is on the clock.
+    this.switchActiveTo(room, performingTeam);
     return room;
   }
 
@@ -330,7 +321,8 @@ export class RoomManager {
     room.performing.hint = cleanHint;
     room.phase = 'guessing';
     room.guessing = { pendingGuesses: [] };
-    this.startTurnTimer(room);
+    // Active team doesn't change — the performer's team is still on the clock,
+    // just for their guessers now. No need to switch.
     return room;
   }
 
@@ -361,8 +353,6 @@ export class RoomManager {
       }
       current.push(word);
     }
-    // Note: toggling does NOT reset the timer — the team has one continuous
-    // window to decide and submit.
     return room;
   }
 
@@ -402,7 +392,7 @@ export class RoomManager {
     };
 
     room.phase = 'resolved';
-    this.clearTurnTimer(room);
+    this.pauseAllClocks(room);
     return room;
   }
 
@@ -447,56 +437,55 @@ export class RoomManager {
       resolution: room.resolution,
       teamNames: room.teamNames,
       taunt: room.taunt,
-      settings: room.settings,
-      turnDeadline: room.turnDeadline,
+      teamClocks: cloneClocks(room.teamClocks),
     };
   }
 
-  // ─── timer ───
+  // ─── chess-clock helpers ───
 
-  private startTurnTimer(room: Room): void {
-    this.clearTurnTimer(room);
-    const seconds = room.settings.roundTimeoutSeconds;
-    if (seconds === null || seconds <= 0) {
-      room.turnDeadline = null;
+  private switchActiveTo(room: Room, team: Team): void {
+    const other: Team = team === 'red' ? 'blue' : 'red';
+    pauseClock(room.teamClocks[other]);
+    startClock(room.teamClocks[team]);
+    this.scheduleTimeoutFor(room, team);
+  }
+
+  private pauseAllClocks(room: Room): void {
+    pauseClock(room.teamClocks.red);
+    pauseClock(room.teamClocks.blue);
+    this.clearRoomTimer(room);
+  }
+
+  private scheduleTimeoutFor(room: Room, team: Team): void {
+    this.clearRoomTimer(room);
+    const remaining = room.teamClocks[team].remainingMs;
+    if (remaining <= 0) {
+      this.handleTimeout(room, team);
       return;
     }
-    const deadline = Date.now() + seconds * 1000;
-    room.turnDeadline = deadline;
-    const code = room.code; // capture for closure safety
+    const code = room.code;
     room.timerId = setTimeout(() => {
       const r = this.rooms.get(code);
       if (!r) return;
-      this.handleTimeout(r);
-    }, seconds * 1000);
+      this.handleTimeout(r, team);
+    }, remaining);
   }
 
-  private clearTurnTimer(room: Room): void {
+  private clearRoomTimer(room: Room): void {
     if (room.timerId) {
       clearTimeout(room.timerId);
       room.timerId = null;
     }
-    room.turnDeadline = null;
   }
 
-  private handleTimeout(room: Room): void {
+  private handleTimeout(room: Room, timedOutTeam: Team): void {
     if (room.phase === 'resolved' || room.phase === 'lobby') return;
 
-    let timedOutTeam: Team;
-    let timedOutPhase: 'bidding' | 'performing' | 'guessing';
-
-    if (room.phase === 'bidding' && room.bidding) {
-      timedOutPhase = 'bidding';
-      timedOutTeam = room.bidding.currentTurn;
-    } else if (room.phase === 'performing' && room.performing) {
-      timedOutPhase = 'performing';
-      timedOutTeam = room.performing.team;
-    } else if (room.phase === 'guessing' && room.performing) {
-      timedOutPhase = 'guessing';
-      timedOutTeam = room.performing.team;
-    } else {
-      return; // unknown state, no-op
-    }
+    // Pause both clocks (timed-out team's remainingMs goes to 0; the other's snapshots wherever it was)
+    pauseClock(room.teamClocks[timedOutTeam]);
+    pauseClock(room.teamClocks[timedOutTeam === 'red' ? 'blue' : 'red']);
+    room.teamClocks[timedOutTeam].remainingMs = 0;
+    this.clearRoomTimer(room);
 
     const winner: Team = timedOutTeam === 'red' ? 'blue' : 'red';
 
@@ -504,7 +493,6 @@ export class RoomManager {
       reason: 'timeout',
       winner,
       timedOutTeam,
-      timedOutPhase,
       performerTeam: room.performing?.team ?? null,
       bidCount: room.performing?.bidCount ?? null,
       hint: room.performing?.hint ?? null,
@@ -512,10 +500,7 @@ export class RoomManager {
       guesses: room.guessing ? [...room.guessing.pendingGuesses] : null,
     };
     room.phase = 'resolved';
-    this.clearTurnTimer(room);
 
-    // Broadcast the change since this was triggered by a server-side timer,
-    // not by a socket event.
     this.onRoomChange?.(room);
   }
 
@@ -543,7 +528,8 @@ export class RoomManager {
     room.resolution = null;
     room.performerTargets = null;
     room.taunt = null;
-    this.startTurnTimer(room);
+    room.teamClocks = freshClocks();
+    this.switchActiveTo(room, openingTeam);
   }
 
   private resetToLobby(room: Room): void {
@@ -556,7 +542,8 @@ export class RoomManager {
     room.resolution = null;
     room.performerTargets = null;
     room.taunt = null;
-    this.clearTurnTimer(room);
+    room.teamClocks = freshClocks();
+    this.clearRoomTimer(room);
   }
 
   private requireGuesser(room: Room, playerId: string): void {
@@ -601,6 +588,36 @@ export class RoomManager {
       if (!this.rooms.has(code)) return code;
     }
     throw new Error('Could not generate unique room code');
+  }
+}
+
+// ─── module-level pure helpers ───
+
+function freshClocks(): TeamClocks {
+  return {
+    red: { remainingMs: TEAM_TIME_BUDGET_MS, runningSince: null },
+    blue: { remainingMs: TEAM_TIME_BUDGET_MS, runningSince: null },
+  };
+}
+
+function cloneClocks(c: TeamClocks): TeamClocks {
+  return {
+    red: { ...c.red },
+    blue: { ...c.blue },
+  };
+}
+
+function pauseClock(clock: TeamClock): void {
+  if (clock.runningSince !== null) {
+    const elapsed = Date.now() - clock.runningSince;
+    clock.remainingMs = Math.max(0, clock.remainingMs - elapsed);
+    clock.runningSince = null;
+  }
+}
+
+function startClock(clock: TeamClock): void {
+  if (clock.runningSince === null) {
+    clock.runningSince = Date.now();
   }
 }
 

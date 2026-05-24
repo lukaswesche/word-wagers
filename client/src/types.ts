@@ -36,6 +36,19 @@ export type GuessingState = {
   pendingGuesses: string[];
 };
 
+// Snapshot of a team's chess clock. When `runningSince` is null the clock is
+// paused at `remainingMs`. When set, current remaining =
+// max(0, remainingMs - (Date.now() - runningSince)).
+export type TeamClock = {
+  remainingMs: number;
+  runningSince: number | null;
+};
+
+export type TeamClocks = {
+  red: TeamClock;
+  blue: TeamClock;
+};
+
 export type Resolution =
   | {
       reason: 'normal';
@@ -50,7 +63,6 @@ export type Resolution =
       reason: 'timeout';
       winner: Team;
       timedOutTeam: Team;
-      timedOutPhase: 'bidding' | 'performing' | 'guessing';
       performerTeam: Team | null;
       bidCount: number | null;
       hint: string | null;
@@ -63,10 +75,6 @@ export type Taunt = {
   fromName: string;
   message: string;
   winnerTeam: Team;
-};
-
-export type RoomSettings = {
-  roundTimeoutSeconds: number | null;
 };
 
 export type RoomState = {
@@ -82,8 +90,7 @@ export type RoomState = {
   resolution: Resolution | null;
   teamNames: { red: string; blue: string };
   taunt: Taunt | null;
-  settings: RoomSettings;
-  turnDeadline: number | null;
+  teamClocks: TeamClocks;
 };
 
 export type AckResponse<T = unknown> =
@@ -99,15 +106,17 @@ export function teamLabel(team: Team): string {
   return team === 'red' ? 'Red' : 'Blue';
 }
 
-// Server-enforced bounds. Must match server's MIN/MAX_TIMEOUT_SECONDS.
-export const MIN_TIMEOUT_SECONDS = 5;
-export const MAX_TIMEOUT_SECONDS = 3600;
+/** Compute current ms remaining on a team's clock at the moment of the call. */
+export function getClockRemainingMs(clock: TeamClock): number {
+  if (clock.runningSince === null) return clock.remainingMs;
+  const elapsed = Date.now() - clock.runningSince;
+  return Math.max(0, clock.remainingMs - elapsed);
+}
 
-export function formatTimeLimit(seconds: number | null): string {
-  if (seconds === null) return 'No limit';
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  if (s === 0) return m === 1 ? '1 min' : `${m} min`;
-  return `${m}m ${s}s`;
+/** Format a ms value as M:SS (or 0:0X for sub-10s, never negative). */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }

@@ -1342,6 +1342,11 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   .captains-row  { grid-template-columns: 1fr; }
 }
 
+@keyframes clock-pulse {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%      { transform: scale(1.3); opacity: 0.65; }
+}
+
 /* ============================================================
    Host Settings — range slider (matches accent + dark/light)
    ============================================================ */
