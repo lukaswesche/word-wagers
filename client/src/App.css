@@ -1501,3 +1501,30 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   color: var(--muted);
   line-height: 1.45;
 }
+
+/* ── Two-column game layout (board always visible on the right) ── */
+.game-layout {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+.game-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: 1.5rem;
+}
+.game-board-col {
+  position: sticky;
+  top: 1.5rem;
+}
+.game-board-col .board-section-title {
+  margin-top: 0;
+}
+@media (max-width: 900px) {
+  .game-layout { grid-template-columns: 1fr; }
+  .game-sidebar,
+  .game-board-col { position: static; }
+}

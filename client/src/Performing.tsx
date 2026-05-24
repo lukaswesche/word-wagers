@@ -40,74 +40,78 @@ function Performing({ room, myId }: Props) {
   const canSubmit = selected.length === bidCount && hint.trim().length > 0;
 
   return (
-    <section>
-      <RoomHeader code={room.code} />
-      <TeamClocks room={room} />
+    <section className="game-layout">
+      <div className="game-sidebar">
+        <RoomHeader code={room.code} />
+        <TeamClocks room={room} />
 
-      {/* Phase banner */}
-      <div className={`phase-banner team-${teamClass}`}>
-        <p className={`phase-chip team-${teamClass}`}>
-          Performer — {teamLabel(performing.team)} team
-        </p>
-        <p className="phase-title">
-          {performer?.name ?? '?'}
-          {!performer?.connected && <span className="player-tag" style={{ color: 'var(--red)', marginLeft: '0.4rem' }}>(offline)</span>}
-          {' '}must hit{' '}
-          <strong style={{ color: performing.team === 'red' ? 'var(--red)' : 'var(--blue)' }}>
-            {bidCount}
-          </strong>
-          {' '}{bidCount === 1 ? 'word' : 'words'} with a one-word hint.
-        </p>
+        {/* Phase banner */}
+        <div className={`phase-banner team-${teamClass}`}>
+          <p className={`phase-chip team-${teamClass}`}>
+            Performer — {teamLabel(performing.team)} team
+          </p>
+          <p className="phase-title">
+            {performer?.name ?? '?'}
+            {!performer?.connected && <span className="player-tag" style={{ color: 'var(--red)', marginLeft: '0.4rem' }}>(offline)</span>}
+            {' '}must hit{' '}
+            <strong style={{ color: performing.team === 'red' ? 'var(--red)' : 'var(--blue)' }}>
+              {bidCount}
+            </strong>
+            {' '}{bidCount === 1 ? 'word' : 'words'} with a one-word hint.
+          </p>
+        </div>
+
+        {isPerformer ? (
+          <div className="card">
+            <p className="card-title">
+              Step 1 — Pick your {bidCount} target words ({selected.length}/{bidCount})
+            </p>
+            <p className="card-body">
+              Click words on the board. These stay secret — only you can see them.
+            </p>
+
+            <div className="mt-1">
+              <label className="form-label" htmlFor="hint-input">Step 2 — Your one-word hint</label>
+              <input
+                id="hint-input"
+                type="text"
+                className="input-field"
+                value={hint}
+                onChange={e => setHint(e.target.value)}
+                placeholder="one word, no spaces"
+                maxLength={30}
+              />
+            </div>
+
+            <div className="mt-1">
+              <button
+                className="btn btn-primary"
+                onClick={submit}
+                disabled={busy || !canSubmit}
+              >
+                Submit hint
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="waiting-msg">
+            Waiting for {performer?.name ?? '?'} to pick {bidCount} words and give a hint…
+          </p>
+        )}
+
+        {error && <p className="error-msg" role="alert">{error}</p>}
       </div>
 
-      {isPerformer ? (
-        <div className="card mt-1">
-          <p className="card-title">
-            Step 1 — Pick your {bidCount} target words ({selected.length}/{bidCount})
-          </p>
-          <p className="card-body">
-            Click words on the board below. These stay secret — only you can see them.
-          </p>
-
-          <div className="mt-1">
-            <label className="form-label" htmlFor="hint-input">Step 2 — Your one-word hint</label>
-            <input
-              id="hint-input"
-              type="text"
-              className="input-field"
-              value={hint}
-              onChange={e => setHint(e.target.value)}
-              placeholder="one word, no spaces"
-              maxLength={30}
-            />
-          </div>
-
-          <div className="mt-1">
-            <button
-              className="btn btn-primary"
-              onClick={submit}
-              disabled={busy || !canSubmit}
-            >
-              Submit hint
-            </button>
-          </div>
-        </div>
-      ) : (
-        <p className="waiting-msg">
-          Waiting for {performer?.name ?? '?'} to pick {bidCount} words and give a hint…
-        </p>
-      )}
-
-      {error && <p className="error-msg" role="alert">{error}</p>}
-
-      <p className="board-section-title">Board</p>
-      <Board
-        words={room.words}
-        selectable={isPerformer}
-        selected={selected}
-        onToggle={toggle}
-        maxSelections={bidCount}
-      />
+      <div className="game-board-col">
+        <p className="board-section-title">Board</p>
+        <Board
+          words={room.words}
+          selectable={isPerformer}
+          selected={selected}
+          onToggle={toggle}
+          maxSelections={bidCount}
+        />
+      </div>
     </section>
   );
 }

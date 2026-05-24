@@ -44,77 +44,81 @@ function Guessing({ room, myId }: Props) {
   };
 
   return (
-    <section>
-      <RoomHeader code={room.code} />
-      <TeamClocks room={room} />
+    <section className="game-layout">
+      <div className="game-sidebar">
+        <RoomHeader code={room.code} />
+        <TeamClocks room={room} />
 
-      {/* Hint display — visible to BOTH teams (public info once announced) */}
-      <div className={`hint-display phase-banner team-${teamClass}`}>
-        <p className="hint-super">
-          Hint from {performer?.name ?? '?'} ({teamLabel(performing.team)})
-        </p>
-        <p className="hint-word">{hint.toUpperCase()}</p>
-        <p className="hint-for">
-          for <strong>{bidCount}</strong> {bidCount === 1 ? 'word' : 'words'}
-        </p>
-        {!isOnPerformerTeam && (
-          <p className="phase-body" style={{ marginTop: '0.75rem', opacity: 0.85 }}>
-            {teamLabel(performing.team)} team is guessing — {guessing.pendingGuesses.length} / {bidCount} selected so far.
+        {/* Hint display — visible to BOTH teams (public info once announced) */}
+        <div className={`hint-display phase-banner team-${teamClass}`}>
+          <p className="hint-super">
+            Hint from {performer?.name ?? '?'} ({teamLabel(performing.team)})
           </p>
-        )}
+          <p className="hint-word">{hint.toUpperCase()}</p>
+          <p className="hint-for">
+            for <strong>{bidCount}</strong> {bidCount === 1 ? 'word' : 'words'}
+          </p>
+          {!isOnPerformerTeam && (
+            <p className="phase-body" style={{ marginTop: '0.75rem', opacity: 0.85 }}>
+              {teamLabel(performing.team)} team is guessing — {guessing.pendingGuesses.length} / {bidCount} selected so far.
+            </p>
+          )}
+        </div>
+
+        {/* Guesser panel */}
+        <div className="card">
+          {canGuess ? (
+            <>
+              <p className="card-title">Guess for {teamLabel(performing.team)} team</p>
+              <p className="card-body">
+                Click words to add/remove. Selections are shared with your team.
+                Pick exactly <strong>{bidCount}</strong>, then any teammate can submit.
+              </p>
+              <p className="guess-counter mt-1">
+                Selected: <strong>{pendingCount}</strong> / {bidCount}
+              </p>
+              <div className="mt-1">
+                <button
+                  className="btn btn-primary"
+                  onClick={submit}
+                  disabled={busy || !ready}
+                >
+                  Submit guesses
+                </button>
+              </div>
+            </>
+          ) : isPerformer ? (
+            <>
+              <p className="card-title">Your team is guessing…</p>
+              <p className="card-body">You gave the hint — just watch.</p>
+              <p className="guess-counter mt-1">
+                Selected: <strong>{pendingCount}</strong> / {bidCount}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="card-title">The other team is guessing</p>
+              <p className="card-body">Watch what they pick.</p>
+              <p className="guess-counter mt-1">
+                Selected: <strong>{pendingCount}</strong> / {bidCount}
+              </p>
+            </>
+          )}
+        </div>
+
+        {error && <p className="error-msg" role="alert">{error}</p>}
       </div>
 
-      {/* Guesser panel */}
-      <div className="card mt-1">
-        {canGuess ? (
-          <>
-            <p className="card-title">Guess for {teamLabel(performing.team)} team</p>
-            <p className="card-body">
-              Click words to add/remove. Selections are shared with your team.
-              Pick exactly <strong>{bidCount}</strong>, then any teammate can submit.
-            </p>
-            <p className="guess-counter mt-1">
-              Selected: <strong>{pendingCount}</strong> / {bidCount}
-            </p>
-            <div className="mt-1">
-              <button
-                className="btn btn-primary"
-                onClick={submit}
-                disabled={busy || !ready}
-              >
-                Submit guesses
-              </button>
-            </div>
-          </>
-        ) : isPerformer ? (
-          <>
-            <p className="card-title">Your team is guessing…</p>
-            <p className="card-body">You gave the hint — just watch.</p>
-            <p className="guess-counter mt-1">
-              Selected: <strong>{pendingCount}</strong> / {bidCount}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="card-title">The other team is guessing</p>
-            <p className="card-body">Watch what they pick.</p>
-            <p className="guess-counter mt-1">
-              Selected: <strong>{pendingCount}</strong> / {bidCount}
-            </p>
-          </>
-        )}
+      <div className="game-board-col">
+        <p className="board-section-title">Board</p>
+        <Board
+          words={room.words}
+          selectable={canGuess}
+          selected={guessing.pendingGuesses}
+          onToggle={toggle}
+          maxSelections={bidCount}
+        />
       </div>
-
-      {error && <p className="error-msg" role="alert">{error}</p>}
-
-      <p className="board-section-title">Board</p>
-      <Board
-        words={room.words}
-        selectable={canGuess}
-        selected={guessing.pendingGuesses}
-        onToggle={toggle}
-        maxSelections={bidCount}
-      />
     </section>
   );
 }
