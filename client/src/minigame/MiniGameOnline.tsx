@@ -306,14 +306,26 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
         {(!state || phase === 'waiting') && (
           <div className="mg-panel mg-enter">
-            <div className="mg-eyebrow">Online room</div>
-            <h1 className="mg-h1 mg-title-big">{state?.code ?? '...'}</h1>
+            <div className="mg-eyebrow">Room code — share with your opponent</div>
+            <div className="mg-room-code-block">
+              <span className="mg-room-code">{state?.code ?? '...'}</span>
+              {state?.code && (
+                <button
+                  className="mg-copy-btn"
+                  onClick={() => {
+                    navigator.clipboard.writeText(state.code).catch(() => {});
+                  }}
+                >
+                  Copy
+                </button>
+              )}
+            </div>
             <p className="mg-tag">
-              Share this code with your opponent. The match starts as soon as they join.
+              Your opponent goes to Bid &amp; Brag, taps "Online vs player", enters this code and their name, and hits Join.
             </p>
-            <div className="mg-foot">
-              {me ? `You are ${me.name}.` : 'Connecting...'}
-              {opponent ? ` ${opponent.name} joined!` : ' Waiting for opponent...'}
+            <div className="mg-waiting-status">
+              <div className="mg-spinner" />
+              <span>{opponent ? `${opponent.name} joined! Starting...` : 'Waiting for opponent...'}</span>
             </div>
           </div>
         )}

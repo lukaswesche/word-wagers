@@ -1,7 +1,43 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState, type ReactNode } from 'react';
 import MiniGameSolo from './MiniGameSolo';
 import MiniGameOnline from './MiniGameOnline';
 import { type Difficulty, DIFFICULTY_LABEL } from './difficulty';
+
+// ───────────── Error boundary ─────────────
+type EBProps = { onBack: () => void; children: ReactNode };
+type EBState = { crashed: boolean; message: string };
+class GameErrorBoundary extends Component<EBProps, EBState> {
+  state: EBState = { crashed: false, message: '' };
+  static getDerivedStateFromError(e: unknown): EBState {
+    return { crashed: true, message: String(e) };
+  }
+  componentDidCatch() { /* logged automatically */ }
+  render() {
+    if (this.state.crashed) {
+      return (
+        <div className="mg-root">
+          <div className="mg-topbar">
+            <button className="mg-back" onClick={() => { this.setState({ crashed: false, message: '' }); this.props.onBack(); }}>Back</button>
+            <div className="mg-title-small">Bid &amp; Brag</div>
+            <div />
+          </div>
+          <div className="mg-stage">
+            <div className="mg-panel mg-enter">
+              <div className="mg-eyebrow">Something went wrong</div>
+              <h2 className="mg-h2" style={{ color: 'var(--clr-sub)', fontSize: '1rem', fontWeight: 400 }}>
+                The game hit an error. Try switching to text input mode instead of voice.
+              </h2>
+              <button className="mg-cta" onClick={() => { this.setState({ crashed: false, message: '' }); this.props.onBack(); }}>
+                Back to lobby
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type View =
   | { kind: 'lobby' }
@@ -17,17 +53,25 @@ export default function MiniGameApp({ onExit }: Props) {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [view.kind]);
 
+  const toLobby = () => setView({ kind: 'lobby' });
+
   if (view.kind === 'solo') {
-    return <MiniGameSolo onExit={() => setView({ kind: 'lobby' })} difficulty={view.difficulty} />;
+    return (
+      <GameErrorBoundary onBack={toLobby}>
+        <MiniGameSolo onExit={toLobby} difficulty={view.difficulty} />
+      </GameErrorBoundary>
+    );
   }
   if (view.kind === 'online') {
     return (
-      <MiniGameOnline
-        onExit={() => setView({ kind: 'lobby' })}
-        initialMode={view.mode}
-        initialName={view.name}
-        initialCode={view.code}
-      />
+      <GameErrorBoundary onBack={toLobby}>
+        <MiniGameOnline
+          onExit={toLobby}
+          initialMode={view.mode}
+          initialName={view.name}
+          initialCode={view.code}
+        />
+      </GameErrorBoundary>
     );
   }
 

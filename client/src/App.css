@@ -3329,6 +3329,30 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .mg-secondary:hover { background: var(--accent-soft); border-color: var(--accent-border); }
 .mg-foot { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
 
+/* Room code block ------------------------------------------------- */
+.mg-room-code-block {
+  display: flex; align-items: center; gap: 0.75rem;
+  justify-content: center; margin: 0.5rem 0 1rem;
+}
+.mg-room-code {
+  font-size: clamp(3rem, 14vw, 5rem);
+  font-weight: 900; letter-spacing: 0.18em;
+  color: var(--accent); line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.mg-copy-btn {
+  background: var(--accent-soft); border: 1px solid var(--accent-border);
+  color: var(--accent); border-radius: 8px; padding: 0.4rem 0.9rem;
+  font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  transition: background 0.15s;
+}
+.mg-copy-btn:hover { background: var(--accent); color: #000; }
+.mg-waiting-status {
+  display: flex; align-items: center; gap: 0.6rem;
+  color: var(--clr-sub); font-size: 0.9rem; margin-top: 0.5rem;
+  justify-content: center;
+}
+
 /* Reveal phase ---------------------------------------------------- */
 .mg-prompt { line-height: 1.2; max-width: 600px; }
 .mg-countdown.big {

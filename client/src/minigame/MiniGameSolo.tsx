@@ -152,6 +152,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     setPlayerBid(Math.min(7, Math.max(3, Math.round(c.answers.length * 0.18))));
     setPlayerLocked(false);
     setCpuBid(cpuBidFor(c, difficulty));
+    voice.stop();
     voice.reset();
     setTypedAnswer('');
     setTypePreview(null);

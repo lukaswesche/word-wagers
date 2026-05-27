@@ -237,19 +237,35 @@ type MGStateSnapshot = {
   serverTime: number; // for clock-skew correction on the client
 };
 
-function snapshot(room: MGRoom): MGStateSnapshot {
+// Build a snapshot personalized for a specific player:
+//  - During bidding: mask opponent's bid until bidReveal
+//  - During performing: strip opponent's judged items (only send validCount + done)
+function snapshotFor(room: MGRoom, myPlayerId: string): MGStateSnapshot {
+  // Bids: during bidding phase, only reveal own bid
+  let bids: { [pid: string]: number };
+  if (room.phase === 'bidding') {
+    bids = {};
+    if (typeof room.bids[myPlayerId] === 'number') bids[myPlayerId] = room.bids[myPlayerId];
+  } else {
+    bids = { ...room.bids };
+  }
+
+  // Performing: full judged list for self, validCount+done only for opponents
   let performingSnap: MGStateSnapshot['performing'] = null;
   if (room.performing) {
     const byPlayer: { [pid: string]: { validCount: number; judged: JudgedItem[]; done: boolean } } = {};
     for (const [pid, slot] of Object.entries(room.performing)) {
+      const validCount = slot.judged.filter(j => j.status === 'valid').length;
       byPlayer[pid] = {
-        validCount: slot.judged.filter(j => j.status === 'valid').length,
-        judged: slot.judged,
+        validCount,
+        // Only the owner gets the real judged array during performing; opponents get empty
+        judged: (room.phase === 'performing' && pid !== myPlayerId) ? [] : slot.judged,
         done: slot.done,
       };
     }
     performingSnap = { byPlayer };
   }
+
   return {
     code: room.code,
     phase: room.phase,
@@ -261,7 +277,7 @@ function snapshot(room: MGRoom): MGStateSnapshot {
     category: room.category
       ? { id: room.category.id, short: room.category.short, prompt: room.category.prompt }
       : null,
-    bids: { ...room.bids },
+    bids,
     performing: performingSnap,
     history: room.history,
     scores: { ...room.scores },
@@ -443,7 +459,12 @@ export function registerMiniGame(io: Server) {
   const emitState = (code: string) => {
     const room = rooms.get(code);
     if (!room) return;
-    io.to(`mg:${code}`).emit('mg-state', snapshot(room));
+    // Send personalized snapshots so players can't see each other's answers during perform
+    // or each other's bids during bidding.
+    for (const player of room.players) {
+      if (!player.socketId) continue;
+      io.to(player.socketId).emit('mg-state', snapshotFor(room, player.playerId));
+    }
   };
 
   // Periodic sweep: evict players whose grace period has expired
