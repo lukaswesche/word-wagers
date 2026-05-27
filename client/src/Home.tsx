@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { socket } from './socket';
 import type { AckResponse } from './types';
 
-function Home() {
+type HomeProps = { onTryMiniGame?: () => void };
+
+function Home({ onTryMiniGame }: HomeProps = {}) {
   const [name,      setName]      = useState('');
   const [joinCode,  setJoinCode]  = useState('');
   const [error,     setError]     = useState<string | null>(null);
@@ -113,6 +115,13 @@ function Home() {
         <p key={errorKey} className="home-error" role="alert">
           {error}
         </p>
+      )}
+
+      {/* ── Mini-game launcher ── */}
+      {onTryMiniGame && (
+        <button className="home-minigame-link" onClick={onTryMiniGame}>
+          Try the mini-game (beta)
+        </button>
       )}
 
     </div>
