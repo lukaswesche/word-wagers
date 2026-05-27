@@ -93,6 +93,10 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
   const voice = useVoice();
   const [typedAnswer, setTypedAnswer] = useState('');
   const [useText, setUseText] = useState(!voice.supported);
+  const httpWarning = !voice.supported &&
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'http:' &&
+    window.location.hostname !== 'localhost';
   const [typePreview, setTypePreview] = useState<'match' | 'no-match' | null>(null);
 
   // Preview: check if typed text would match category
@@ -349,6 +353,9 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
             <div className="mg-countdown big mg-countdown-pulse" key={Math.ceil(timer)}>
               {Math.ceil(timer)}
             </div>
+            {httpWarning && (
+              <div className="mg-http-warning">Voice unavailable on HTTP — using text input</div>
+            )}
           </div>
         )}
 

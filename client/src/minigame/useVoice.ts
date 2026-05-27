@@ -36,7 +36,15 @@ function getCtor(): (new () => SpeechRecognitionLike) | null {
 }
 
 export function isVoiceSupported(): boolean {
-  return getCtor() !== null;
+  if (getCtor() === null) return false;
+  // Browsers block microphone on non-secure origins (http://) except localhost
+  if (typeof window !== 'undefined' &&
+      window.location.protocol !== 'https:' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1') {
+    return false;
+  }
+  return true;
 }
 
 export type UseVoiceResult = {

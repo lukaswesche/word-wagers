@@ -3352,6 +3352,12 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   color: var(--clr-sub); font-size: 0.9rem; margin-top: 0.5rem;
   justify-content: center;
 }
+.mg-http-warning {
+  background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.3);
+  color: #fbbf24; border-radius: 8px; padding: 0.5rem 0.75rem;
+  font-size: 0.78rem; text-align: center; margin-top: 0.75rem;
+  max-width: 320px; margin-inline: auto;
+}
 
 /* Reveal phase ---------------------------------------------------- */
 .mg-prompt { line-height: 1.2; max-width: 600px; }

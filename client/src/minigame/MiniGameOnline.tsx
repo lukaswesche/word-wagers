@@ -38,11 +38,16 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
   const voice = useVoice();
   const [typedAnswer, setTypedAnswer] = useState('');
+  // Default to text if voice unsupported (includes http:// non-localhost)
   const [useText, setUseText] = useState(!voice.supported);
+  const httpWarning = !voice.supported &&
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'http:' &&
+    window.location.hostname !== 'localhost';
   const [myDone, setMyDone] = useState(false);
   const [typePreview, setTypePreview] = useState<'match' | 'no-match' | null>(null);
 
-  // ── join on connect ──
+  // ── join on connect (also handles re-join after page refresh) ──
   useEffect(() => {
     if (!sock.connected || joined) return;
     let cancelled = false;
@@ -51,14 +56,26 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
         ? await sock.create(initialName)
         : await sock.join(initialCode ?? '', initialName);
       if (cancelled) return;
-      if (!res.ok) setLocalError(res.error);
-      else { setJoined(true); setLocalError(null); }
+      if (!res.ok) {
+        // If re-join after refresh fails (room expired), drop back to lobby
+        try { sessionStorage.removeItem('mg:session'); } catch { /* ignore */ }
+        setLocalError(res.error);
+      } else {
+        setJoined(true);
+        setLocalError(null);
+      }
     })();
     return () => { cancelled = true; };
   }, [sock.connected, joined, initialMode, initialName, initialCode, sock]);
 
   const state = sock.state;
   const phase = state?.phase ?? 'waiting';
+
+  // ── persist session once we have a room code (needed for host who doesn't know code at create time) ──
+  useEffect(() => {
+    if (!state?.code) return;
+    try { sessionStorage.setItem('mg:session', JSON.stringify({ code: state.code, name: initialName })); } catch { /* ignore */ }
+  }, [state?.code, initialName]);
 
   // Score flash animation when scores change
   useEffect(() => {
@@ -173,7 +190,11 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
     setTypePreview(matches ? 'match' : 'no-match');
   }, [typedAnswer, state?.category]);
 
-  const exitAndLeave = useCallback(() => { sock.leave(); onExit(); }, [sock, onExit]);
+  const exitAndLeave = useCallback(() => {
+    try { sessionStorage.removeItem('mg:session'); } catch { /* ignore */ }
+    sock.leave();
+    onExit();
+  }, [sock, onExit]);
 
   const handleDone = useCallback(() => {
     if (flushTimer.current !== null) { window.clearTimeout(flushTimer.current); flushTimer.current = null; }
@@ -327,6 +348,11 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
               <div className="mg-spinner" />
               <span>{opponent ? `${opponent.name} joined! Starting...` : 'Waiting for opponent...'}</span>
             </div>
+            {httpWarning && (
+              <div className="mg-http-warning">
+                Voice input requires HTTPS. Text input will be used instead.
+              </div>
+            )}
           </div>
         )}
 

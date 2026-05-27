@@ -47,13 +47,26 @@ type View =
 type Props = { onExit: () => void };
 
 export default function MiniGameApp({ onExit }: Props) {
-  const [view, setView] = useState<View>({ kind: 'lobby' });
+  // Restore an in-progress online game after a page refresh
+  const [view, setView] = useState<View>(() => {
+    try {
+      const saved = sessionStorage.getItem('mg:session');
+      if (saved) {
+        const { code, name } = JSON.parse(saved) as { code: string; name: string };
+        if (code && name) return { kind: 'online', mode: 'join', name, code };
+      }
+    } catch { /* ignore */ }
+    return { kind: 'lobby' };
+  });
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [view.kind]);
 
-  const toLobby = () => setView({ kind: 'lobby' });
+  const toLobby = () => {
+    try { sessionStorage.removeItem('mg:session'); } catch { /* ignore */ }
+    setView({ kind: 'lobby' });
+  };
 
   if (view.kind === 'solo') {
     return (
@@ -75,7 +88,13 @@ export default function MiniGameApp({ onExit }: Props) {
     );
   }
 
-  return <Lobby onExit={onExit} onStart={(v) => setView(v)} />;
+  return <Lobby onExit={onExit} onStart={(v) => {
+    // Persist online sessions so a page refresh re-joins automatically
+    if (v.kind === 'online' && v.code) {
+      try { sessionStorage.setItem('mg:session', JSON.stringify({ code: v.code, name: v.name })); } catch { /* ignore */ }
+    }
+    setView(v);
+  }} />;
 }
 
 // ───────────── Lobby ─────────────
