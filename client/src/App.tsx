@@ -3,6 +3,7 @@ import { socket } from './socket';
 import { getOrCreatePlayerId } from './playerId';
 import Home from './Home';
 import GameRoom from './GameRoom';
+import MiniGameApp from './minigame/MiniGameApp';
 import type { RoomState } from './types';
 import './App.css';
 
@@ -13,6 +14,9 @@ function App() {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [mode, setMode] = useState<Mode>('dark');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [view, setView] = useState<'home' | 'minigame'>(() =>
+    typeof window !== 'undefined' && window.location.hash === '#minigame' ? 'minigame' : 'home'
+  );
   const playerIdRef = useRef<string>(getOrCreatePlayerId());
 
   useEffect(() => {
@@ -94,8 +98,14 @@ function App() {
         </div>
       )}
 
-      <main className={room ? 'game-main' : 'home-wrapper'}>
-        {room ? <GameRoom room={room} myId={myId} /> : <Home />}
+      <main className={room || view === 'minigame' ? 'game-main' : 'home-wrapper'}>
+        {room ? (
+          <GameRoom room={room} myId={myId} />
+        ) : view === 'minigame' ? (
+          <MiniGameApp onExit={() => { window.location.hash = ''; setView('home'); }} />
+        ) : (
+          <Home onTryMiniGame={() => { window.location.hash = '#minigame'; setView('minigame'); }} />
+        )}
       </main>
     </div>
   );

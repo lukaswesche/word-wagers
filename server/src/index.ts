@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RoomManager } from './rooms.js';
+import { registerMiniGame } from './minigame.js';
 import type {
   AckResponse,
   ChallengePayload,
@@ -55,6 +56,8 @@ const rooms = new RoomManager((room) => {
   io.to(room.code).emit('room-state', rooms.toRoomState(room));
   console.log(`timeout in room ${room.code}: ${room.resolution?.reason}`);
 });
+
+registerMiniGame(io);
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Unknown error';
