@@ -199,6 +199,9 @@ const RECONNECT_GRACE_MS = 30000;
 const rooms = new Map<string, MGRoom>();
 const socketToRoom = new Map<string, string>();
 const socketToPlayer = new Map<string, string>();
+// playerId → roomCode mapping for server-driven refresh recovery (mirrors main RoomManager pattern).
+// Survives socket disconnect/reconnect; only cleared on explicit leave or grace-period eviction.
+const playerToRoom = new Map<string, string>();
 
 function makeCode(): string {
   let code = '';
@@ -237,19 +240,35 @@ type MGStateSnapshot = {
   serverTime: number; // for clock-skew correction on the client
 };
 
-function snapshot(room: MGRoom): MGStateSnapshot {
+// Build a snapshot personalized for a specific player:
+//  - During bidding: mask opponent's bid until bidReveal
+//  - During performing: strip opponent's judged items (only send validCount + done)
+function snapshotFor(room: MGRoom, myPlayerId: string): MGStateSnapshot {
+  // Bids: during bidding phase, only reveal own bid
+  let bids: { [pid: string]: number };
+  if (room.phase === 'bidding') {
+    bids = {};
+    if (typeof room.bids[myPlayerId] === 'number') bids[myPlayerId] = room.bids[myPlayerId];
+  } else {
+    bids = { ...room.bids };
+  }
+
+  // Performing: full judged list for self, validCount+done only for opponents
   let performingSnap: MGStateSnapshot['performing'] = null;
   if (room.performing) {
     const byPlayer: { [pid: string]: { validCount: number; judged: JudgedItem[]; done: boolean } } = {};
     for (const [pid, slot] of Object.entries(room.performing)) {
+      const validCount = slot.judged.filter(j => j.status === 'valid').length;
       byPlayer[pid] = {
-        validCount: slot.judged.filter(j => j.status === 'valid').length,
-        judged: slot.judged,
+        validCount,
+        // Only the owner gets the real judged array during performing; opponents get empty
+        judged: (room.phase === 'performing' && pid !== myPlayerId) ? [] : slot.judged,
         done: slot.done,
       };
     }
     performingSnap = { byPlayer };
   }
+
   return {
     code: room.code,
     phase: room.phase,
@@ -261,7 +280,7 @@ function snapshot(room: MGRoom): MGStateSnapshot {
     category: room.category
       ? { id: room.category.id, short: room.category.short, prompt: room.category.prompt }
       : null,
-    bids: { ...room.bids },
+    bids,
     performing: performingSnap,
     history: room.history,
     scores: { ...room.scores },
@@ -443,7 +462,12 @@ export function registerMiniGame(io: Server) {
   const emitState = (code: string) => {
     const room = rooms.get(code);
     if (!room) return;
-    io.to(`mg:${code}`).emit('mg-state', snapshot(room));
+    // Send personalized snapshots so players can't see each other's answers during perform
+    // or each other's bids during bidding.
+    for (const player of room.players) {
+      if (!player.socketId) continue;
+      io.to(player.socketId).emit('mg-state', snapshotFor(room, player.playerId));
+    }
   };
 
   // Periodic sweep: evict players whose grace period has expired
@@ -457,6 +481,7 @@ export function registerMiniGame(io: Server) {
         }
       }
       if (evicted.length === 0) continue;
+      for (const p of evicted) playerToRoom.delete(p.playerId);
       room.players = room.players.filter(p => !evicted.includes(p));
       if (room.players.length === 0) {
         clearPhaseTimer(room);
@@ -480,7 +505,9 @@ export function registerMiniGame(io: Server) {
   }, 2000);
   sweep.unref?.();
 
-  const handleDisconnect = (socket: Socket) => {
+  // explicit=true → user pressed Leave, forget them from playerToRoom so refresh won't auto-rejoin
+  // explicit=false → transport disconnect, KEEP playerToRoom so refresh restores them
+  const handleDisconnect = (socket: Socket, explicit = false) => {
     const code = socketToRoom.get(socket.id);
     const playerId = socketToPlayer.get(socket.id);
     socketToRoom.delete(socket.id);
@@ -490,6 +517,29 @@ export function registerMiniGame(io: Server) {
     if (!room) return;
     const player = room.players.find(p => p.playerId === playerId);
     if (!player) return;
+    if (explicit) {
+      // Remove the player entirely
+      playerToRoom.delete(playerId);
+      room.players = room.players.filter(p => p.playerId !== playerId);
+      delete room.scores[playerId];
+      if (room.players.length === 0) {
+        clearPhaseTimer(room);
+        rooms.delete(code);
+        return;
+      }
+      // Opponent remains — reset the room to waiting
+      clearPhaseTimer(room);
+      room.phase = 'waiting';
+      room.prePausedPhase = null;
+      room.prePausedRemainingMs = null;
+      room.category = null;
+      room.bids = {};
+      room.performing = null;
+      room.phaseStartedAt = Date.now();
+      room.phaseDurationMs = 0;
+      emitState(code);
+      return;
+    }
     player.socketId = null;
     player.disconnectedAt = Date.now();
     // Pause if mid-game and both seats were filled
@@ -500,6 +550,47 @@ export function registerMiniGame(io: Server) {
   };
 
   io.on('connection', (socket: Socket) => {
+
+    // Mirror the main game's "hello" pattern: when a client sends hello with
+    // their persistent playerId, look up any active mg room they belong to,
+    // re-link the socket, and push their state. Survives page refresh without
+    // any client-side rejoin logic.
+    socket.on('hello', (payload: { playerId?: string }) => {
+      const playerId = payload?.playerId?.trim();
+      if (!playerId) return;
+      const code = playerToRoom.get(playerId);
+      if (!code) return;
+      const room = rooms.get(code);
+      if (!room) {
+        playerToRoom.delete(playerId);
+        return;
+      }
+      const player = room.players.find(p => p.playerId === playerId);
+      if (!player) {
+        playerToRoom.delete(playerId);
+        return;
+      }
+      // Re-link the new socket to the existing player slot
+      if (player.socketId && player.socketId !== socket.id) {
+        // Old socket entries become stale — clean them up
+        socketToRoom.delete(player.socketId);
+        socketToPlayer.delete(player.socketId);
+      }
+      player.socketId = socket.id;
+      player.disconnectedAt = null;
+      socketToRoom.set(socket.id, code);
+      socketToPlayer.set(socket.id, playerId);
+      socket.join(`mg:${code}`);
+      // If the room was paused due to this player's disconnect, resume now
+      if (room.phase === 'paused' && room.players.every(p => p.socketId !== null)) {
+        resumeRoom(room, () => emitState(code));
+      }
+      // Push state to this socket so the client renders the in-game view
+      io.to(socket.id).emit('mg-state', snapshotFor(room, playerId));
+      // Also broadcast to opponent so they see this player as "connected"
+      emitState(code);
+      console.log(`mg: ${playerId} restored to room ${code}`);
+    });
 
     socket.on('mg-create', (
       payload: { playerId: string; name: string },
@@ -530,6 +621,7 @@ export function registerMiniGame(io: Server) {
       rooms.set(code, room);
       socketToRoom.set(socket.id, code);
       socketToPlayer.set(socket.id, playerId);
+      playerToRoom.set(playerId, code);
       socket.join(`mg:${code}`);
       ack({ ok: true, code, playerId });
       emitState(code);
@@ -559,6 +651,7 @@ export function registerMiniGame(io: Server) {
       }
       socketToRoom.set(socket.id, code);
       socketToPlayer.set(socket.id, playerId);
+      playerToRoom.set(playerId, code);
       socket.join(`mg:${code}`);
 
       const allConnected = room.players.every(p => p.socketId !== null);
@@ -575,7 +668,7 @@ export function registerMiniGame(io: Server) {
     });
 
     socket.on('mg-leave', (_p: unknown, ack?: (r: { ok: true }) => void) => {
-      handleDisconnect(socket);
+      handleDisconnect(socket, true);
       ack?.({ ok: true });
     });
 

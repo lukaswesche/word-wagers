@@ -19,7 +19,8 @@ function normalizeAnswer(s: string): string {
 
 type Props = {
   onExit: () => void;
-  initialMode: 'create' | 'join';
+  // 'rejoin' = server already has us in a room (after refresh); skip create/join
+  initialMode: 'create' | 'join' | 'rejoin';
   initialName: string;
   initialCode?: string;
 };
@@ -38,13 +39,35 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
   const voice = useVoice();
   const [typedAnswer, setTypedAnswer] = useState('');
-  const [useText, setUseText] = useState(!voice.supported);
+  // Default to text if voice unsupported OR user previously chose text mode
+  const [useText, setUseText] = useState(() => {
+    if (!voice.supported) return true;
+    try {
+      const saved = localStorage.getItem('mg:inputMode');
+      if (saved === 'text') return true;
+      if (saved === 'voice') return false;
+    } catch { /* ignore */ }
+    return !voice.supported;
+  });
+  // Persist choice
+  useEffect(() => {
+    try { localStorage.setItem('mg:inputMode', useText ? 'text' : 'voice'); } catch { /* ignore */ }
+  }, [useText]);
+  const httpWarning = !voice.supported &&
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'http:' &&
+    window.location.hostname !== 'localhost';
   const [myDone, setMyDone] = useState(false);
   const [typePreview, setTypePreview] = useState<'match' | 'no-match' | null>(null);
 
-  // ── join on connect ──
+  // ── create/join on connect (skip if rejoin — server already has us) ──
   useEffect(() => {
     if (!sock.connected || joined) return;
+    if (initialMode === 'rejoin') {
+      // Server-driven recovery: hello already sent by parent, state will arrive.
+      setJoined(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const res = initialMode === 'create'
@@ -173,7 +196,10 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
     setTypePreview(matches ? 'match' : 'no-match');
   }, [typedAnswer, state?.category]);
 
-  const exitAndLeave = useCallback(() => { sock.leave(); onExit(); }, [sock, onExit]);
+  const exitAndLeave = useCallback(() => {
+    sock.leave();
+    onExit();
+  }, [sock, onExit]);
 
   const handleDone = useCallback(() => {
     if (flushTimer.current !== null) { window.clearTimeout(flushTimer.current); flushTimer.current = null; }
@@ -306,15 +332,59 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
         {(!state || phase === 'waiting') && (
           <div className="mg-panel mg-enter">
-            <div className="mg-eyebrow">Online room</div>
-            <h1 className="mg-h1 mg-title-big">{state?.code ?? '...'}</h1>
-            <p className="mg-tag">
-              Share this code with your opponent. The match starts as soon as they join.
-            </p>
-            <div className="mg-foot">
-              {me ? `You are ${me.name}.` : 'Connecting...'}
-              {opponent ? ` ${opponent.name} joined!` : ' Waiting for opponent...'}
+            <div className="mg-eyebrow">Room code — share with your opponent</div>
+            <div className="mg-room-code-block">
+              <span className="mg-room-code">{state?.code ?? '...'}</span>
+              {state?.code && (
+                <button
+                  className="mg-copy-btn"
+                  onClick={() => {
+                    navigator.clipboard.writeText(state.code).catch(() => {});
+                  }}
+                >
+                  Copy
+                </button>
+              )}
             </div>
+            <p className="mg-tag">
+              Your opponent goes to Bid &amp; Brag, taps "Online vs player", enters this code and their name, and hits Join.
+            </p>
+            <div className="mg-waiting-status">
+              <div className="mg-spinner" />
+              <span>{opponent ? `${opponent.name} joined! Starting...` : 'Waiting for opponent...'}</span>
+            </div>
+            {httpWarning && (
+              <div className="mg-http-warning">
+                Voice input requires HTTPS. Text input will be used instead.
+              </div>
+            )}
+            {voice.supported && !httpWarning && (
+              <div className="mg-input-pref">
+                <div className="mg-input-pref-label">Input mode</div>
+                <div className="mg-input-pref-row">
+                  <button
+                    className={`mg-pref-btn ${!useText ? 'active' : ''}`}
+                    onClick={async () => {
+                      const p = await voice.ensurePermission();
+                      if (p === 'granted') setUseText(false);
+                      else if (p === 'denied') setUseText(true);
+                    }}
+                  >
+                    🎤 Voice
+                    {voice.permission === 'denied' && <span className="mg-pref-warn"> (blocked)</span>}
+                  </button>
+                  <button
+                    className={`mg-pref-btn ${useText ? 'active' : ''}`}
+                    onClick={() => setUseText(true)}
+                  >
+                    ⌨️ Type
+                  </button>
+                </div>
+                {voice.permission === 'denied' && (
+                  <div className="mg-pref-hint">Unblock the mic in your browser settings to use voice</div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

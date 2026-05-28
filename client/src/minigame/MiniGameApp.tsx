@@ -1,37 +1,118 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState, type ReactNode } from 'react';
+import { socket } from '../socket';
+import { getOrCreatePlayerId } from '../playerId';
 import MiniGameSolo from './MiniGameSolo';
 import MiniGameOnline from './MiniGameOnline';
 import { type Difficulty, DIFFICULTY_LABEL } from './difficulty';
 
+// ───────────── Error boundary ─────────────
+type EBProps = { onBack: () => void; children: ReactNode };
+type EBState = { crashed: boolean; message: string };
+class GameErrorBoundary extends Component<EBProps, EBState> {
+  state: EBState = { crashed: false, message: '' };
+  static getDerivedStateFromError(e: unknown): EBState {
+    return { crashed: true, message: String(e) };
+  }
+  componentDidCatch() { /* logged automatically */ }
+  render() {
+    if (this.state.crashed) {
+      return (
+        <div className="mg-root">
+          <div className="mg-topbar">
+            <button className="mg-back" onClick={() => { this.setState({ crashed: false, message: '' }); this.props.onBack(); }}>Back</button>
+            <div className="mg-title-small">Bid &amp; Brag</div>
+            <div />
+          </div>
+          <div className="mg-stage">
+            <div className="mg-panel mg-enter">
+              <div className="mg-eyebrow">Something went wrong</div>
+              <h2 className="mg-h2" style={{ color: 'var(--clr-sub)', fontSize: '1rem', fontWeight: 400 }}>
+                The game hit an error. Try switching to text input mode instead of voice.
+              </h2>
+              <button className="mg-cta" onClick={() => { this.setState({ crashed: false, message: '' }); this.props.onBack(); }}>
+                Back to lobby
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 type View =
   | { kind: 'lobby' }
   | { kind: 'solo'; difficulty: Difficulty }
-  | { kind: 'online'; mode: 'create' | 'join'; name: string; code?: string };
+  // 'rejoin' = server-side auto-recovery after refresh (no create/join needed)
+  | { kind: 'online'; mode: 'create' | 'join' | 'rejoin'; name: string; code?: string };
 
 type Props = { onExit: () => void };
 
 export default function MiniGameApp({ onExit }: Props) {
   const [view, setView] = useState<View>({ kind: 'lobby' });
 
+  // Server-driven refresh recovery: send hello, then if we receive an mg-state
+  // event while still in the lobby, switch to online view in 'rejoin' mode.
+  // Mirrors the main game's pattern where 'room-state' arriving on hello
+  // automatically transitions the user into their game.
+  useEffect(() => {
+    const playerId = getOrCreatePlayerId();
+    if (!socket.connected) {
+      socket.connect();
+      const onConnect = () => socket.emit('hello', { playerId });
+      socket.on('connect', onConnect);
+      return () => { socket.off('connect', onConnect); };
+    }
+    socket.emit('hello', { playerId });
+  }, []);
+
+  useEffect(() => {
+    // Switch from lobby to in-game if the server tells us we're in a room.
+    // (Only when in lobby — otherwise MiniGameOnline owns the state.)
+    const onMGState = (s: { code: string; players: { id: string; name: string }[] }) => {
+      setView(prev => {
+        if (prev.kind !== 'lobby') return prev;
+        const me = s.players.find(p => p.id === getOrCreatePlayerId());
+        return { kind: 'online', mode: 'rejoin', name: me?.name ?? 'Player', code: s.code };
+      });
+    };
+    socket.on('mg-state', onMGState);
+    return () => { socket.off('mg-state', onMGState); };
+  }, []);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [view.kind]);
 
+  const toLobby = () => {
+    // Always leave server-side when intentionally going back to lobby so the
+    // auto-rejoin listener below doesn't immediately yank us back into the room.
+    try { socket.emit('mg-leave', {}); } catch { /* ignore */ }
+    setView({ kind: 'lobby' });
+  };
+
   if (view.kind === 'solo') {
-    return <MiniGameSolo onExit={() => setView({ kind: 'lobby' })} difficulty={view.difficulty} />;
+    return (
+      <GameErrorBoundary onBack={toLobby}>
+        <MiniGameSolo onExit={toLobby} difficulty={view.difficulty} />
+      </GameErrorBoundary>
+    );
   }
   if (view.kind === 'online') {
     return (
-      <MiniGameOnline
-        onExit={() => setView({ kind: 'lobby' })}
-        initialMode={view.mode}
-        initialName={view.name}
-        initialCode={view.code}
-      />
+      <GameErrorBoundary onBack={toLobby}>
+        <MiniGameOnline
+          onExit={toLobby}
+          initialMode={view.mode}
+          initialName={view.name}
+          initialCode={view.code}
+        />
+      </GameErrorBoundary>
     );
   }
 
-  return <Lobby onExit={onExit} onStart={(v) => setView(v)} />;
+  return <Lobby onExit={onExit} onStart={setView} />;
 }
 
 // ───────────── Lobby ─────────────

@@ -54,16 +54,29 @@ type CpuPlan = {
 function buildCpuPlan(category: Category, bid: number, ceiling: number, diff: Difficulty): CpuPlan {
   const hitChance = cpuHitChance(bid, ceiling, diff);
   const hit = Math.random() < hitChance;
-  const targetValid = hit ? bid : Math.max(0, bid - 1 - Math.floor(Math.random() * 3));
+
+  // When CPU misses, the shortfall is meaningful — random drop between
+  // 30% and 80% of the bid on easy, smaller drops on harder tiers.
+  let targetValid: number;
+  if (hit) {
+    targetValid = bid;
+  } else {
+    const dropPct = diff === 'easy' ? 0.30 + Math.random() * 0.50
+                  : diff === 'medium' ? 0.20 + Math.random() * 0.40
+                  : 0.10 + Math.random() * 0.25;
+    targetValid = Math.max(0, Math.floor(bid * (1 - dropPct)));
+  }
 
   const realPool = category.answers
     .map(a => (Array.isArray(a) ? a[0] : a))
     .sort(() => Math.random() - 0.5);
   const reals = realPool.slice(0, Math.min(targetValid, realPool.length));
 
+  // Wrong-answer rate scales with difficulty (easy CPU blurts nonsense more)
+  const wrongChance = diff === 'easy' ? 0.60 : diff === 'medium' ? 0.35 : 0.15;
   const wrongs: string[] = [];
-  if (!hit && Math.random() < 0.55) {
-    const bogus = ['Inception', 'Madagascar', 'Texas State', 'Eiffel', 'Pluto-99', 'Blobfish'];
+  if (!hit && Math.random() < wrongChance) {
+    const bogus = ['Inception', 'Madagascar', 'Texas State', 'Eiffel', 'Pluto-99', 'Blobfish', 'Sandwich', 'Tomato'];
     wrongs.push(bogus[Math.floor(Math.random() * bogus.length)]);
   }
 
@@ -92,7 +105,22 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
 
   const voice = useVoice();
   const [typedAnswer, setTypedAnswer] = useState('');
-  const [useText, setUseText] = useState(!voice.supported);
+  const [useText, setUseText] = useState(() => {
+    if (!voice.supported) return true;
+    try {
+      const saved = localStorage.getItem('mg:inputMode');
+      if (saved === 'text') return true;
+      if (saved === 'voice') return false;
+    } catch { /* ignore */ }
+    return !voice.supported;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('mg:inputMode', useText ? 'text' : 'voice'); } catch { /* ignore */ }
+  }, [useText]);
+  const httpWarning = !voice.supported &&
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'http:' &&
+    window.location.hostname !== 'localhost';
   const [typePreview, setTypePreview] = useState<'match' | 'no-match' | null>(null);
 
   // Preview: check if typed text would match category
@@ -152,6 +180,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     setPlayerBid(Math.min(7, Math.max(3, Math.round(c.answers.length * 0.18))));
     setPlayerLocked(false);
     setCpuBid(cpuBidFor(c, difficulty));
+    voice.stop();
     voice.reset();
     setTypedAnswer('');
     setTypePreview(null);
@@ -348,6 +377,9 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
             <div className="mg-countdown big mg-countdown-pulse" key={Math.ceil(timer)}>
               {Math.ceil(timer)}
             </div>
+            {httpWarning && (
+              <div className="mg-http-warning">Voice unavailable on HTTP — using text input</div>
+            )}
           </div>
         )}
 
