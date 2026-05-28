@@ -91,7 +91,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
   const [roundIdx, setRoundIdx] = useState(0);
   const [history, setHistory] = useState<Round[]>([]);
   const [category, setCategory] = useState<Category | null>(null);
-  const [playerBid, setPlayerBid] = useState(5);
+  const [playerBid, setPlayerBid] = useState(() => Math.floor(Math.random() * 10) + 1);
   const [playerLocked, setPlayerLocked] = useState(false);
   const [cpuBid, setCpuBid] = useState(0);
   const [timer, setTimer] = useState(0);
@@ -111,10 +111,9 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     if (!voice.supported) return true;
     try {
       const saved = localStorage.getItem('mg:inputMode');
-      if (saved === 'text') return true;
       if (saved === 'voice') return false;
     } catch { /* ignore */ }
-    return !voice.supported;
+    return true; // default: text
   });
   useEffect(() => {
     try { localStorage.setItem('mg:inputMode', useText ? 'text' : 'voice'); } catch { /* ignore */ }
@@ -179,7 +178,8 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     const c = randomCategory(prev);
     setCategory(c);
     setRoundIdx(idx);
-    setPlayerBid(Math.min(7, Math.max(3, Math.round(c.answers.length * 0.18))));
+    // Random default 1-10 — adds gambling pressure
+    setPlayerBid(Math.floor(Math.random() * 10) + 1);
     setPlayerLocked(false);
     setCpuBid(cpuBidFor(c, difficulty));
     voice.stop();
@@ -388,7 +388,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
             onClick={() => { sfx.toggle(); }}
             aria-label="Toggle sound"
             title="Toggle sound"
-          >🔊</button>
+          >Sound</button>
         </div>
 
         <div className="mg-scoreboard">
@@ -552,7 +552,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                   {liveJudge?.length === 0 && <li className="mg-ans-empty">your answers appear here</li>}
                   {[...(liveJudge ?? [])].reverse().map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status} mg-ans-slide`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '~' : 'x'}</span>
                       <span>{j.raw}</span>
                     </li>
                   ))}
@@ -575,7 +575,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                 {cpuSpoken.length === 0 && <li className="mg-ans-empty">CPU is thinking...</li>}
                 {[...cpuSpoken].reverse().map((it, i) => (
                   <li key={i} className={`mg-ans ${it.status} mg-ans-slide`}>
-                    <span className="mg-ans-mark">{it.status === 'valid' ? '✓' : it.status === 'duplicate' ? '↻' : '✗'}</span>
+                    <span className="mg-ans-mark">{it.status === 'valid' ? '+' : it.status === 'duplicate' ? '~' : 'x'}</span>
                     <span>{it.text}</span>
                   </li>
                 ))}
@@ -616,7 +616,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                   <ul className="mg-answers small">
                     {r.judged.map((j, i) => (
                       <li key={i} className={`mg-ans ${j.status}`}>
-                        <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
+                        <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '~' : 'x'}</span>
                         <span>{j.raw}</span>
                       </li>
                     ))}
@@ -627,7 +627,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                   <ul className="mg-answers small">
                     {r.cpuJudged.map((j, i) => (
                       <li key={i} className={`mg-ans ${j.status}`}>
-                        <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
+                        <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '~' : 'x'}</span>
                         <span>{j.text}</span>
                       </li>
                     ))}

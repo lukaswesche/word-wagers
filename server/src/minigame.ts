@@ -323,8 +323,9 @@ type MGStateSnapshot = {
 };
 
 // Build a snapshot personalized for a specific player:
-//  - During bidding: mask opponent's bid until bidReveal
+//  - During bidding: mask opponent's bid AND opponent's skip (so opponent gets surprised)
 //  - During performing: strip opponent's judged items (only send validCount + done)
+//  - Skip status only revealed at bidReveal phase onward (or always to skipper)
 function snapshotFor(room: MGRoom, myPlayerId: string): MGStateSnapshot {
   // Bids: during bidding phase, only reveal own bid
   let bids: { [pid: string]: number };
@@ -333,6 +334,12 @@ function snapshotFor(room: MGRoom, myPlayerId: string): MGStateSnapshot {
     if (typeof room.bids[myPlayerId] === 'number') bids[myPlayerId] = room.bids[myPlayerId];
   } else {
     bids = { ...room.bids };
+  }
+
+  // Hide skip from opponent during bidding — surprise revealed at bidReveal
+  let visibleSkipperId: string | null = room.roundSkipperId;
+  if (room.phase === 'bidding' && room.roundSkipperId && room.roundSkipperId !== myPlayerId) {
+    visibleSkipperId = null;
   }
 
   // Performing: full judged list for self, validCount+done only for opponents
@@ -373,7 +380,7 @@ function snapshotFor(room: MGRoom, myPlayerId: string): MGStateSnapshot {
     history: room.history,
     scores: { ...room.scores },
     skipsRemaining,
-    roundSkipperId: room.roundSkipperId,
+    roundSkipperId: visibleSkipperId,
     bestOf: room.bestOf,
     winsNeeded: Math.ceil(room.bestOf / 2),
     phaseStartedAt: room.phaseStartedAt,
@@ -446,15 +453,25 @@ function finishRound(room: MGRoom, emit: () => void) {
   if (!room.category || !room.performing) return;
   if (room.players.length < 2) return;
 
-  // Percentage-based scoring: compare validCount / bid for each player
+  // WEIGHTED scoring: score = validCount * (validCount / bid)
+  //   This prevents the "bid 1, name 1, win at 100%" exploit because
+  //   bidding 1 caps your score at 1. Bidding 5 and hitting all 5 = 5.
+  //   Bidding 5 and hitting 3 = 1.8. Higher ambition + accuracy wins.
   const results: RoundRecord['results'] = {};
   for (const p of room.players) {
-    const bid = room.bids[p.playerId] ?? 1;
+    const bid = Math.max(1, room.bids[p.playerId] ?? 1);
     const slot = room.performing[p.playerId];
     const valid = slot ? slot.judged.filter(j => j.status === 'valid').length : 0;
     const pct = valid / bid;
     results[p.playerId] = { validCount: valid, pct, judged: slot?.judged ?? [] };
   }
+  // Compute weighted score per player (not stored on record but used for win calc)
+  const weighted = (pid: string) => {
+    const r = results[pid];
+    if (!r) return 0;
+    const bid = Math.max(1, room.bids[pid] ?? 1);
+    return r.validCount * (r.validCount / bid);
+  };
 
   const [p1, p2] = room.players;
   let winnerId: string;
@@ -467,18 +484,18 @@ function finishRound(room: MGRoom, emit: () => void) {
     const challengerValid = results[challengerId].validCount;
     winnerId = (challengerValid >= challengerBid) ? challengerId : skipperId;
   } else {
-    // Normal mode: higher percentage wins.
-    // Tie-break 1: higher raw valid count (the absolute amount of correct answers)
+    // Normal mode: WEIGHTED score wins (validCount * pct).
+    // Tie-break 1: higher raw validCount
     // Tie-break 2: lower bidder (more conservative play)
-    const r1 = results[p1.playerId];
-    const r2 = results[p2.playerId];
-    if (r1.pct > r2.pct) {
+    const w1 = weighted(p1.playerId);
+    const w2 = weighted(p2.playerId);
+    if (w1 > w2) {
       winnerId = p1.playerId;
-    } else if (r2.pct > r1.pct) {
+    } else if (w2 > w1) {
       winnerId = p2.playerId;
-    } else if (r1.validCount > r2.validCount) {
+    } else if (results[p1.playerId].validCount > results[p2.playerId].validCount) {
       winnerId = p1.playerId;
-    } else if (r2.validCount > r1.validCount) {
+    } else if (results[p2.playerId].validCount > results[p1.playerId].validCount) {
       winnerId = p2.playerId;
     } else {
       const b1 = room.bids[p1.playerId] ?? 1;

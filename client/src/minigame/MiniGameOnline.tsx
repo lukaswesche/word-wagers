@@ -30,7 +30,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
   const sock = useMiniGameSocket();
   const [localError, setLocalError] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
-  const [playerBid, setPlayerBid] = useState(5);
+  const [playerBid, setPlayerBid] = useState(() => Math.floor(Math.random() * 10) + 1);
   const [playerLocked, setPlayerLocked] = useState(false);
   const [phaseTimer, setPhaseTimer] = useState(0);
   const lastPhaseRef = useRef<string>('');
@@ -41,15 +41,14 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
   const voice = useVoice();
   const sfx = useSound();
   const [typedAnswer, setTypedAnswer] = useState('');
-  // Default to text if voice unsupported OR user previously chose text mode
+  // Default to text (primary input). Voice is opt-in.
   const [useText, setUseText] = useState(() => {
     if (!voice.supported) return true;
     try {
       const saved = localStorage.getItem('mg:inputMode');
-      if (saved === 'text') return true;
-      if (saved === 'voice') return false;
+      if (saved === 'voice') return false; // only switch off if user explicitly chose voice
     } catch { /* ignore */ }
-    return !voice.supported;
+    return true;
   });
   // Persist choice
   useEffect(() => {
@@ -109,7 +108,8 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
     if (phase === 'reveal') sfx.play('reveal');
     if (phase === 'bidding') {
       setPlayerLocked(false);
-      setPlayerBid(5);
+      // Random default 1-10: if a skip happens, you're locked into your gamble
+      setPlayerBid(Math.floor(Math.random() * 10) + 1);
     }
     if (phase === 'performing') {
       voice.reset();
@@ -341,7 +341,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
             onClick={() => { sfx.toggle(); }}
             aria-label="Toggle sound"
             title="Toggle sound"
-          >🔊</button>
+          >Sound</button>
         </div>
 
         <div className="mg-scoreboard">
@@ -438,14 +438,14 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                       else if (p === 'denied') setUseText(true);
                     }}
                   >
-                    🎤 Voice
+                    Voice
                     {voice.permission === 'denied' && <span className="mg-pref-warn"> (blocked)</span>}
                   </button>
                   <button
                     className={`mg-pref-btn ${useText ? 'active' : ''}`}
                     onClick={() => setUseText(true)}
                   >
-                    ⌨️ Type
+                    Text
                   </button>
                 </div>
                 {voice.permission === 'denied' && (
@@ -511,21 +511,61 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
         {phase === 'bidReveal' && cat && (
           <div className="mg-panel mg-enter">
-            <div className="mg-eyebrow">Bids revealed — both perform!</div>
-            <div className="mg-reveal-row">
-              <div className="mg-reveal-side mg-slide-in-left">
-                <div className="mg-side-label">YOU</div>
-                <div className="mg-side-bid mg-num-pop">{myBid}</div>
-              </div>
-              <div className="mg-reveal-vs">vs</div>
-              <div className="mg-reveal-side mg-slide-in-right">
-                <div className="mg-side-label">{(opponent?.name ?? 'OPP').toUpperCase()}</div>
-                <div className="mg-side-bid mg-num-pop">{oppBid}</div>
-              </div>
-            </div>
-            <div className="mg-verdict mg-fade-in-late">
-              Both players name answers from their own bid. Higher % wins.
-            </div>
+            {state?.roundSkipperId && state.roundSkipperId !== sock.myId ? (
+              <>
+                <div className="mg-eyebrow mg-skip-eyebrow">SURPRISE — {opponent?.name ?? 'opponent'} SKIPPED</div>
+                <div className="mg-reveal-row">
+                  <div className="mg-reveal-side mg-slide-in-left">
+                    <div className="mg-side-label">YOUR BID</div>
+                    <div className="mg-side-bid mg-num-pop">{myBid}</div>
+                  </div>
+                  <div className="mg-reveal-vs">!</div>
+                  <div className="mg-reveal-side mg-slide-in-right opp">
+                    <div className="mg-side-label">{(opponent?.name ?? 'OPP').toUpperCase()}</div>
+                    <div className="mg-side-bid mg-num-pop">SKIP</div>
+                  </div>
+                </div>
+                <div className="mg-verdict mg-fade-in-late mg-verdict-warn">
+                  Hit all {myBid} or lose the round.
+                </div>
+              </>
+            ) : state?.roundSkipperId === sock.myId ? (
+              <>
+                <div className="mg-eyebrow">You skipped — {opponent?.name ?? 'opponent'} doesn't know yet</div>
+                <div className="mg-reveal-row">
+                  <div className="mg-reveal-side mg-slide-in-left">
+                    <div className="mg-side-label">YOU</div>
+                    <div className="mg-side-bid mg-num-pop">SKIP</div>
+                  </div>
+                  <div className="mg-reveal-vs">vs</div>
+                  <div className="mg-reveal-side mg-slide-in-right">
+                    <div className="mg-side-label">{(opponent?.name ?? 'OPP').toUpperCase()}</div>
+                    <div className="mg-side-bid mg-num-pop">{oppBid}</div>
+                  </div>
+                </div>
+                <div className="mg-verdict mg-fade-in-late">
+                  They need to hit {oppBid} — anything less and you win.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mg-eyebrow">Bids revealed — both perform!</div>
+                <div className="mg-reveal-row">
+                  <div className="mg-reveal-side mg-slide-in-left">
+                    <div className="mg-side-label">YOU</div>
+                    <div className="mg-side-bid mg-num-pop">{myBid}</div>
+                  </div>
+                  <div className="mg-reveal-vs">vs</div>
+                  <div className="mg-reveal-side mg-slide-in-right">
+                    <div className="mg-side-label">{(opponent?.name ?? 'OPP').toUpperCase()}</div>
+                    <div className="mg-side-bid mg-num-pop">{oppBid}</div>
+                  </div>
+                </div>
+                <div className="mg-verdict mg-fade-in-late">
+                  Score = correct count × accuracy. Bigger bids hit fully = bigger reward.
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -597,10 +637,17 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                   </div>
                 )}
 
-                {/* Always-visible input mode toggle — prevents user from
-                    looking for "back" when they really wanted to switch */}
+                {/* Text-first toggle: Text on left as primary, Voice as opt-in */}
                 {voice.supported && (
                   <div className="mg-input-toggle">
+                    <button
+                      className={`mg-toggle-pill ${useText ? 'active' : ''}`}
+                      onClick={() => {
+                        try { voice.stop(); } catch (e) { console.warn('voice stop failed', e); }
+                        setUseText(true);
+                      }}
+                      type="button"
+                    >Text (primary)</button>
                     <button
                       className={`mg-toggle-pill ${!useText ? 'active' : ''}`}
                       onClick={() => {
@@ -611,15 +658,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                         } catch (e) { console.warn('voice start failed', e); }
                       }}
                       type="button"
-                    >🎤 Voice</button>
-                    <button
-                      className={`mg-toggle-pill ${useText ? 'active' : ''}`}
-                      onClick={() => {
-                        try { voice.stop(); } catch (e) { console.warn('voice stop failed', e); }
-                        setUseText(true);
-                      }}
-                      type="button"
-                    >⌨️ Type</button>
+                    >Voice</button>
                   </div>
                 )}
 
@@ -627,7 +666,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                   {myLiveJudged.length === 0 && <li className="mg-ans-empty">your answers appear here</li>}
                   {[...myLiveJudged].reverse().map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status} mg-ans-slide`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '~' : 'x'}</span>
                       <span>{j.raw}</span>
                       {j.status === 'duplicate' && <span className="mg-ans-note">already said</span>}
                     </li>
@@ -676,7 +715,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                 <ul className="mg-answers small">
                   {(myLastResult?.judged ?? []).map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status}`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '~' : 'x'}</span>
                       <span>{j.raw}</span>
                     </li>
                   ))}
@@ -687,7 +726,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                 <ul className="mg-answers small">
                   {(oppLastResult?.judged ?? []).map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status}`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '~' : 'x'}</span>
                       <span>{j.raw}</span>
                     </li>
                   ))}
