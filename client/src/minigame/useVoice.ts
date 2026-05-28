@@ -133,8 +133,10 @@ export function useVoice(): UseVoiceResult {
   }, [supported]);
 
   const splitPhrase = useCallback((phrase: string): string[] => {
+    // Split on natural list separators. Server-side fuzzy matching handles
+    // any joined-too-fast utterances via greedy multi-word matching.
     return phrase
-      .split(/,|\band\b|\bthen\b|;|\n/i)
+      .split(/,|\band\b|\bthen\b|\balso\b|\bnext\b|;|\n|\.\s|\?\s|!\s/i)
       .map(s => s.trim())
       .filter(Boolean);
   }, []);

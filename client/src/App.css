@@ -3390,6 +3390,89 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   margin-top: 0.5rem;
 }
 
+/* ──── Skip feature ──── */
+.mg-skip-btn {
+  display: inline-block; margin-top: 0.75rem;
+  background: transparent; border: 1px dashed rgba(251,191,36,0.5);
+  color: #fbbf24; border-radius: 8px;
+  padding: 0.4rem 0.9rem; font-size: 0.82rem; cursor: pointer;
+  transition: all 0.15s;
+}
+.mg-skip-btn:hover {
+  background: rgba(251,191,36,0.12); border-style: solid;
+}
+.mg-skip-status {
+  background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
+  color: #fbbf24; border-radius: 10px; padding: 0.75rem 1rem;
+  font-size: 0.92rem; margin: 0.75rem 0; text-align: center;
+}
+.mg-skip-status.opp {
+  background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.3);
+  color: #f87171; font-weight: 600;
+}
+.mg-skip-callout {
+  background: linear-gradient(135deg, rgba(248,113,113,0.15), rgba(251,191,36,0.15));
+  border: 1px solid rgba(248,113,113,0.35);
+  color: #fca5a5; border-radius: 10px;
+  padding: 0.7rem 1rem; font-size: 0.88rem;
+  text-align: center; margin: 0 0 0.75rem;
+  animation: mg-pulse-warn 1.8s ease-in-out infinite;
+}
+@keyframes mg-pulse-warn {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(248,113,113,0); }
+}
+.mg-skip-waiting {
+  text-align: center; padding: 2rem 1rem;
+}
+
+/* ──── Confirm-leave modal ──── */
+.mg-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem; animation: mg-fade-in 0.2s ease;
+}
+.mg-modal {
+  background: #1f2937; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px; padding: 1.5rem; max-width: 400px; width: 100%;
+  text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  animation: mg-modal-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes mg-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mg-modal-pop {
+  from { opacity: 0; transform: scale(0.9) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.mg-cta-danger {
+  background: #dc2626; color: white;
+  border: none; border-radius: 10px;
+  padding: 0.7rem 1.4rem; font-weight: 600; cursor: pointer;
+  transition: background 0.15s;
+}
+.mg-cta-danger:hover { background: #b91c1c; }
+
+/* ──── In-game input toggle (mic vs type) ──── */
+.mg-input-toggle {
+  display: flex; gap: 0.4rem; justify-content: center;
+  margin: 0.75rem 0;
+}
+.mg-toggle-pill {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--clr-sub); border-radius: 999px;
+  padding: 0.4rem 0.95rem; font-size: 0.82rem;
+  cursor: pointer; transition: all 0.15s;
+}
+.mg-toggle-pill.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+.mg-toggle-pill:hover:not(.active) {
+  background: rgba(255,255,255,0.08);
+}
+
 /* Reveal phase ---------------------------------------------------- */
 .mg-prompt { line-height: 1.2; max-width: 600px; }
 .mg-countdown.big {

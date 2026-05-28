@@ -120,17 +120,86 @@ function variants(answer: string | string[]): string[] {
 type ItemStatus = 'valid' | 'invalid' | 'duplicate';
 type JudgedItem = { raw: string; status: ItemStatus };
 
-function judgeItem(cat: CategoryRaw, raw: string, seen: Set<number>): JudgedItem {
-  const n = normalize(raw);
-  if (!n) return { raw, status: 'invalid' };
+// Build a lookup index ONCE per category for O(1) matches
+// (Map<normalizedAnswer, answerIndex>)
+const categoryIndexCache = new WeakMap<CategoryRaw, Map<string, number>>();
+function getCategoryIndex(cat: CategoryRaw): Map<string, number> {
+  let idx = categoryIndexCache.get(cat);
+  if (idx) return idx;
+  idx = new Map();
   for (let i = 0; i < cat.answers.length; i++) {
-    if (variants(cat.answers[i]).includes(n)) {
-      if (seen.has(i)) return { raw, status: 'duplicate' };
-      seen.add(i);
-      return { raw, status: 'valid' };
+    for (const v of variants(cat.answers[i])) {
+      if (!idx.has(v)) idx.set(v, i);
     }
   }
-  return { raw, status: 'invalid' };
+  categoryIndexCache.set(cat, idx);
+  return idx;
+}
+
+// Single-phrase exact judge
+function judgeSingle(cat: CategoryRaw, raw: string, seen: Set<number>): JudgedItem | null {
+  const n = normalize(raw);
+  if (!n) return null;
+  const idx = getCategoryIndex(cat);
+  const match = idx.get(n);
+  if (match !== undefined) {
+    if (seen.has(match)) return { raw, status: 'duplicate' };
+    seen.add(match);
+    return { raw, status: 'valid' };
+  }
+  return null;
+}
+
+// Judge a raw utterance. If the whole phrase doesn't match, try to
+// greedily split it into multiple matched answers — this rescues fast
+// speech like "spider man iron man hulk" that comes back as one segment.
+// Returns ONE OR MORE judged items.
+function judgeItemSmart(cat: CategoryRaw, raw: string, seen: Set<number>): JudgedItem[] {
+  // 1. Try exact whole-phrase match (fast path)
+  const whole = judgeSingle(cat, raw, seen);
+  if (whole) return [whole];
+
+  // 2. Greedy multi-word match: try to match the longest possible prefix
+  //    against the answer list, then recurse on the remainder.
+  const tokens = normalize(raw).split(/\s+/).filter(Boolean);
+  if (tokens.length <= 1) {
+    return [{ raw, status: 'invalid' }];
+  }
+  const idx = getCategoryIndex(cat);
+  const out: JudgedItem[] = [];
+  let cursor = 0;
+  while (cursor < tokens.length) {
+    let matched: { len: number; ansIdx: number } | null = null;
+    // Try longest prefix first (up to 6 words — most answers are <= 5)
+    for (let len = Math.min(6, tokens.length - cursor); len >= 1; len--) {
+      const sub = tokens.slice(cursor, cursor + len).join(' ');
+      const ansIdx = idx.get(sub);
+      if (ansIdx !== undefined) { matched = { len, ansIdx }; break; }
+    }
+    if (matched) {
+      const sub = tokens.slice(cursor, cursor + matched.len).join(' ');
+      if (seen.has(matched.ansIdx)) {
+        out.push({ raw: sub, status: 'duplicate' });
+      } else {
+        seen.add(matched.ansIdx);
+        out.push({ raw: sub, status: 'valid' });
+      }
+      cursor += matched.len;
+    } else {
+      // Skip the unmatched token and try the next
+      cursor += 1;
+    }
+  }
+  if (out.length === 0) {
+    return [{ raw, status: 'invalid' }];
+  }
+  return out;
+}
+
+// Back-compat wrapper that returns just one item (for older call sites if any)
+function judgeItem(cat: CategoryRaw, raw: string, seen: Set<number>): JudgedItem {
+  const res = judgeItemSmart(cat, raw, seen);
+  return res[0];
 }
 
 // ───────────── State ─────────────
@@ -162,6 +231,8 @@ type RoundRecord = {
   // per-player performance data (replaces single performerId/judged)
   results: { [playerId: string]: { validCount: number; pct: number; judged: JudgedItem[] } };
   winnerId: string;
+  // playerId of skipper if this round was skipped; null otherwise
+  skipperId: string | null;
 };
 
 type MGRoom = {
@@ -177,6 +248,11 @@ type MGRoom = {
   performing: { [playerId: string]: PerformSlot } | null;
   history: RoundRecord[];
   scores: { [playerId: string]: number };
+  // Skip allowance: each player gets 1 skip per series. Reset on rematch.
+  skipsUsed: { [playerId: string]: number };
+  // Which player (if any) skipped THIS round — they don't perform; opponent
+  // must hit their full bid to win, else skipper wins automatically.
+  roundSkipperId: string | null;
   bestOf: number;
   createdAt: number;
   // server-side timer driving phase transitions
@@ -184,6 +260,8 @@ type MGRoom = {
   phaseDurationMs: number; // 0 = no auto-advance (lobby/result/matchOver)
   phaseTimer: NodeJS.Timeout | null;
 };
+
+const SKIPS_PER_SERIES = 1;
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 4;
@@ -233,6 +311,10 @@ type MGStateSnapshot = {
   } | null;
   history: RoundRecord[];
   scores: { [playerId: string]: number };
+  // Skips remaining for each player in the current series
+  skipsRemaining: { [playerId: string]: number };
+  // playerId who skipped this round (if any)
+  roundSkipperId: string | null;
   bestOf: number;
   winsNeeded: number;
   phaseStartedAt: number;
@@ -269,6 +351,12 @@ function snapshotFor(room: MGRoom, myPlayerId: string): MGStateSnapshot {
     performingSnap = { byPlayer };
   }
 
+  // Compute skips remaining per player
+  const skipsRemaining: { [pid: string]: number } = {};
+  for (const p of room.players) {
+    skipsRemaining[p.playerId] = Math.max(0, SKIPS_PER_SERIES - (room.skipsUsed[p.playerId] ?? 0));
+  }
+
   return {
     code: room.code,
     phase: room.phase,
@@ -284,6 +372,8 @@ function snapshotFor(room: MGRoom, myPlayerId: string): MGStateSnapshot {
     performing: performingSnap,
     history: room.history,
     scores: { ...room.scores },
+    skipsRemaining,
+    roundSkipperId: room.roundSkipperId,
     bestOf: room.bestOf,
     winsNeeded: Math.ceil(room.bestOf / 2),
     phaseStartedAt: room.phaseStartedAt,
@@ -319,6 +409,7 @@ function newRound(room: MGRoom, emit: () => void, prevCatId: string | null) {
   room.category = pickCategory(prevCatId);
   room.bids = {};
   room.performing = null;
+  room.roundSkipperId = null;
   setPhase(room, 'reveal', REVEAL_MS, () => advanceToBidding(room, emit), emit);
 }
 
@@ -341,9 +432,11 @@ function resolveBids(room: MGRoom, emit: () => void) {
 }
 
 function startPerforming(room: MGRoom, emit: () => void) {
-  // Initialise a perform slot for every player in the room
+  // Initialise a perform slot for every NON-SKIPPER player in the room.
+  // (Skipper doesn't perform; they win only if opponent misses their bid.)
   room.performing = {};
   for (const p of room.players) {
+    if (p.playerId === room.roundSkipperId) continue;
     room.performing[p.playerId] = { judged: [], seen: new Set(), done: false };
   }
   setPhase(room, 'performing', PERFORM_MS, () => finishRound(room, emit), emit);
@@ -363,23 +456,30 @@ function finishRound(room: MGRoom, emit: () => void) {
     results[p.playerId] = { validCount: valid, pct, judged: slot?.judged ?? [] };
   }
 
-  // Determine winner: higher percentage wins; ties go to the lower bidder (conservative play)
   const [p1, p2] = room.players;
-  const r1 = results[p1.playerId];
-  const r2 = results[p2.playerId];
   let winnerId: string;
-  if (r1.pct > r2.pct) {
-    winnerId = p1.playerId;
-  } else if (r2.pct > r1.pct) {
-    winnerId = p2.playerId;
-  } else {
-    // Tie: lower bidder wins (they were more conservative)
-    const b1 = room.bids[p1.playerId] ?? 1;
-    const b2 = room.bids[p2.playerId] ?? 1;
-    winnerId = b1 <= b2 ? p1.playerId : p2.playerId;
-  }
 
-  room.scores[winnerId] = (room.scores[winnerId] ?? 0) + 1;
+  if (room.roundSkipperId) {
+    // SKIP MODE: skipper wins unless opponent hit their bid in full.
+    const skipperId = room.roundSkipperId;
+    const challengerId = p1.playerId === skipperId ? p2.playerId : p1.playerId;
+    const challengerBid = room.bids[challengerId] ?? 1;
+    const challengerValid = results[challengerId].validCount;
+    winnerId = (challengerValid >= challengerBid) ? challengerId : skipperId;
+  } else {
+    // Normal mode: higher percentage wins; ties → lower bidder.
+    const r1 = results[p1.playerId];
+    const r2 = results[p2.playerId];
+    if (r1.pct > r2.pct) {
+      winnerId = p1.playerId;
+    } else if (r2.pct > r1.pct) {
+      winnerId = p2.playerId;
+    } else {
+      const b1 = room.bids[p1.playerId] ?? 1;
+      const b2 = room.bids[p2.playerId] ?? 1;
+      winnerId = b1 <= b2 ? p1.playerId : p2.playerId;
+    }
+  }
 
   const record: RoundRecord = {
     categoryId: room.category.id,
@@ -387,6 +487,7 @@ function finishRound(room: MGRoom, emit: () => void) {
     bids: { ...room.bids },
     results,
     winnerId,
+    skipperId: room.roundSkipperId,
   };
   room.history.push(record);
 
@@ -612,6 +713,8 @@ export function registerMiniGame(io: Server) {
         performing: null,
         history: [],
         scores: { [playerId]: 0 },
+        skipsUsed: { [playerId]: 0 },
+        roundSkipperId: null,
         bestOf: BEST_OF,
         createdAt: Date.now(),
         phaseStartedAt: Date.now(),
@@ -648,6 +751,7 @@ export function registerMiniGame(io: Server) {
       } else {
         room.players.push({ playerId, socketId: socket.id, name, disconnectedAt: null });
         room.scores[playerId] = room.scores[playerId] ?? 0;
+        room.skipsUsed[playerId] = room.skipsUsed[playerId] ?? 0;
       }
       socketToRoom.set(socket.id, code);
       socketToPlayer.set(socket.id, playerId);
@@ -691,6 +795,40 @@ export function registerMiniGame(io: Server) {
       ack?.({ ok: true });
     });
 
+    // Skip the current round (max 1 per series). Skipper doesn't perform;
+    // opponent must hit their full bid in the performing phase to win,
+    // otherwise the skipper wins the round.
+    socket.on('mg-skip', (
+      _payload: unknown,
+      ack?: (res: { ok: true } | { ok: false; error: string }) => void,
+    ) => {
+      const code = socketToRoom.get(socket.id);
+      const playerId = socketToPlayer.get(socket.id);
+      const room = code ? rooms.get(code) : null;
+      if (!room || !playerId) return ack?.({ ok: false, error: 'Not in room' });
+      if (room.phase !== 'bidding') return ack?.({ ok: false, error: 'Skip only during bidding' });
+      if ((room.skipsUsed[playerId] ?? 0) >= SKIPS_PER_SERIES) {
+        return ack?.({ ok: false, error: 'No skips remaining' });
+      }
+      if (room.roundSkipperId) {
+        return ack?.({ ok: false, error: 'Already skipped this round' });
+      }
+      room.skipsUsed[playerId] = (room.skipsUsed[playerId] ?? 0) + 1;
+      room.roundSkipperId = playerId;
+      // Skipper's bid is recorded as 0 (they don't perform)
+      room.bids[playerId] = 0;
+      // Ensure opponent has a bid; default to a reasonable challenge if not
+      const opponent = room.players.find(p => p.playerId !== playerId);
+      if (opponent && typeof room.bids[opponent.playerId] !== 'number') {
+        // Don't auto-bid for opponent — wait for them to lock in
+      }
+      // If opponent already bid, we can advance to bidReveal immediately
+      const bothReady = room.players.every(p => typeof room.bids[p.playerId] === 'number');
+      if (bothReady) resolveBids(room, () => emitState(room.code));
+      else emitState(room.code);
+      ack?.({ ok: true });
+    });
+
     socket.on('mg-perform-batch', (
       payload: { items: string[] },
       ack?: (res: { ok: true } | { ok: false; error: string }) => void,
@@ -707,8 +845,10 @@ export function registerMiniGame(io: Server) {
       for (const raw of items) {
         const s = String(raw ?? '').trim();
         if (!s) continue;
-        const judged = judgeItem(room.category, s, slot.seen);
-        slot.judged.push(judged);
+        // judgeItemSmart can return MULTIPLE items when fast speech merged
+        // several answers into one phrase (e.g. "spider man iron man hulk")
+        const judgedItems = judgeItemSmart(room.category, s, slot.seen);
+        for (const j of judgedItems) slot.judged.push(j);
       }
       emitState(room.code);
       ack?.({ ok: true });
@@ -729,8 +869,8 @@ export function registerMiniGame(io: Server) {
       if (!slot || slot.done) return ack?.({ ok: true });
       const raw = String(payload?.item ?? '').trim();
       if (!raw) return ack?.({ ok: true });
-      const judged = judgeItem(room.category, raw, slot.seen);
-      slot.judged.push(judged);
+      const judgedItems = judgeItemSmart(room.category, raw, slot.seen);
+      for (const j of judgedItems) slot.judged.push(j);
       emitState(room.code);
       ack?.({ ok: true });
     });
@@ -744,8 +884,10 @@ export function registerMiniGame(io: Server) {
       if (!room.performing) return ack?.({ ok: true });
       const slot = room.performing[playerId];
       if (slot) slot.done = true;
-      // If all players are done, finish early
-      const allDone = room.players.every(p => room.performing?.[p.playerId]?.done);
+      // If all NON-SKIPPER players are done, finish early
+      const allDone = room.players.every(p =>
+        p.playerId === room.roundSkipperId || room.performing?.[p.playerId]?.done
+      );
       if (allDone) {
         finishRound(room, () => emitState(room.code));
       }
@@ -778,6 +920,8 @@ export function registerMiniGame(io: Server) {
       if (room.phase !== 'matchOver') return ack?.({ ok: true });
       room.history = [];
       for (const id of Object.keys(room.scores)) room.scores[id] = 0;
+      for (const id of Object.keys(room.skipsUsed)) room.skipsUsed[id] = 0;
+      room.roundSkipperId = null;
       newRound(room, () => emitState(room.code), room.category?.id ?? null);
       emitState(room.code);
       ack?.({ ok: true });

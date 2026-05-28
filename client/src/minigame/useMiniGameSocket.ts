@@ -22,6 +22,7 @@ export type MGRoundRecord = {
   bids: { [playerId: string]: number };
   results: { [playerId: string]: { validCount: number; pct: number; judged: MGJudgedItem[] } };
   winnerId: string;
+  skipperId: string | null;
 };
 
 export type MGPerformingState = {
@@ -37,6 +38,8 @@ export type MGSnapshot = {
   performing: MGPerformingState | null;
   history: MGRoundRecord[];
   scores: { [playerId: string]: number };
+  skipsRemaining: { [playerId: string]: number };
+  roundSkipperId: string | null;
   bestOf: number;
   winsNeeded: number;
   phaseStartedAt: number;
@@ -57,6 +60,7 @@ export type UseMiniGameSocket = {
   join: (code: string, name: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   leave: () => void;
   placeBid: (count: number) => void;
+  skip: () => void;
   pushItem: (item: string) => void;
   pushItems: (items: string[]) => void;
   performDone: () => void;
@@ -118,6 +122,7 @@ export function useMiniGameSocket(): UseMiniGameSocket {
   }, []);
 
   const placeBid = useCallback((count: number) => { socket.emit('mg-bid', { count }); }, []);
+  const skip = useCallback(() => { socket.emit('mg-skip', {}); }, []);
   const pushItem = useCallback((item: string) => { socket.emit('mg-perform-item', { item }); }, []);
   const pushItems = useCallback((items: string[]) => {
     if (!items.length) return;
@@ -133,6 +138,6 @@ export function useMiniGameSocket(): UseMiniGameSocket {
     error,
     connected,
     create, join, leave,
-    placeBid, pushItem, pushItems, performDone, nextRound, rematch,
+    placeBid, skip, pushItem, pushItems, performDone, nextRound, rematch,
   };
 }

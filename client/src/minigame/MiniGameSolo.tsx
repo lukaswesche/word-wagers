@@ -496,7 +496,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                   {liveJudge?.length === 0 && <li className="mg-ans-empty">your answers appear here</li>}
                   {[...(liveJudge ?? [])].reverse().map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status} mg-ans-slide`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '=' : 'x'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
                       <span>{j.raw}</span>
                     </li>
                   ))}
@@ -519,7 +519,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                 {cpuSpoken.length === 0 && <li className="mg-ans-empty">CPU is thinking...</li>}
                 {[...cpuSpoken].reverse().map((it, i) => (
                   <li key={i} className={`mg-ans ${it.status} mg-ans-slide`}>
-                    <span className="mg-ans-mark">{it.status === 'valid' ? '+' : it.status === 'duplicate' ? '=' : 'x'}</span>
+                    <span className="mg-ans-mark">{it.status === 'valid' ? '✓' : it.status === 'duplicate' ? '↻' : '✗'}</span>
                     <span>{it.text}</span>
                   </li>
                 ))}
@@ -560,7 +560,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                   <ul className="mg-answers small">
                     {r.judged.map((j, i) => (
                       <li key={i} className={`mg-ans ${j.status}`}>
-                        <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '=' : 'x'}</span>
+                        <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
                         <span>{j.raw}</span>
                       </li>
                     ))}
@@ -571,7 +571,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
                   <ul className="mg-answers small">
                     {r.cpuJudged.map((j, i) => (
                       <li key={i} className={`mg-ans ${j.status}`}>
-                        <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '=' : 'x'}</span>
+                        <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
                         <span>{j.text}</span>
                       </li>
                     ))}

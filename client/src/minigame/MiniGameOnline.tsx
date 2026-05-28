@@ -152,7 +152,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
       if (flushBuffer.current.length === 0) return;
       sock.pushItems(flushBuffer.current);
       flushBuffer.current = [];
-    }, 250);
+    }, 80); // tight latency — server batches further if needed
   }, [sock]);
 
   useEffect(() => {
@@ -196,10 +196,21 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
     setTypePreview(matches ? 'match' : 'no-match');
   }, [typedAnswer, state?.category]);
 
+  // Confirm before kicking the user out mid-match — this was the silent
+  // "back button switched me to lobby" trap. Now they have to confirm.
+  const [confirmExit, setConfirmExit] = useState(false);
   const exitAndLeave = useCallback(() => {
     sock.leave();
     onExit();
   }, [sock, onExit]);
+  const handleBackClick = useCallback(() => {
+    // No confirm needed if the match is over or we're in the lobby waiting screen
+    if (phase === 'matchOver' || phase === 'waiting' || !state) {
+      exitAndLeave();
+      return;
+    }
+    setConfirmExit(true);
+  }, [phase, state, exitAndLeave]);
 
   const handleDone = useCallback(() => {
     if (flushTimer.current !== null) { window.clearTimeout(flushTimer.current); flushTimer.current = null; }
@@ -274,7 +285,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
     <div className="mg-root">
       {/* ── Prominent scoreboard topbar ── */}
       <div className="mg-topbar mg-topbar-score">
-        <button className="mg-back" onClick={exitAndLeave}>Back</button>
+        <button className="mg-back" onClick={handleBackClick} aria-label="Leave match">Leave</button>
 
         <div className="mg-scoreboard">
           {/* My side */}
@@ -404,15 +415,35 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
             <p className="mg-prompt-small">{cat.prompt}</p>
             <h2 className="mg-h2">How many can you name?</h2>
             <div className="mg-bidder">
-              <button className="mg-step" onClick={() => setPlayerBid(b => Math.max(1, b - 1))} disabled={playerLocked}>−</button>
+              <button className="mg-step" onClick={() => setPlayerBid(b => Math.max(1, b - 1))} disabled={playerLocked || !!state?.roundSkipperId}>−</button>
               <div key={playerBid} className={`mg-bidnum ${playerLocked ? 'locked' : ''} mg-num-pop`}>{playerBid}</div>
-              <button className="mg-step" onClick={() => setPlayerBid(b => b + 1)} disabled={playerLocked}>+</button>
+              <button className="mg-step" onClick={() => setPlayerBid(b => b + 1)} disabled={playerLocked || !!state?.roundSkipperId}>+</button>
             </div>
-            {playerLocked
-              ? <div className="mg-locked mg-pop">Locked in — {playerBid} answers</div>
-              : <button className="mg-cta" onClick={lockBid}>Lock in</button>}
+            {state?.roundSkipperId === sock.myId ? (
+              <div className="mg-skip-status mg-pop">You skipped this round — wait for opponent to bid</div>
+            ) : state?.roundSkipperId === opponent?.id ? (
+              <div className="mg-skip-status mg-pop opp">
+                {opponent?.name ?? 'Opponent'} skipped — hit your bid to win, miss it and they win!
+              </div>
+            ) : playerLocked ? (
+              <div className="mg-locked mg-pop">Locked in — {playerBid} answers</div>
+            ) : (
+              <button className="mg-cta" onClick={lockBid}>Lock in</button>
+            )}
+
+            {/* SKIP button — only show if user has skips left and hasn't already bid/skipped this round */}
+            {!playerLocked && !state?.roundSkipperId && (state?.skipsRemaining?.[sock.myId] ?? 0) > 0 && (
+              <button
+                className="mg-skip-btn"
+                onClick={() => sock.skip()}
+                title="Skip this round — opponent must hit their bid in full or you win"
+              >
+                Skip round ({state?.skipsRemaining?.[sock.myId]} left)
+              </button>
+            )}
+
             <div className="mg-cpu-status">
-              {opponent?.name ?? 'Opponent'}: {oppBid ? 'locked' : 'thinking...'}
+              {opponent?.name ?? 'Opponent'}: {state?.roundSkipperId === opponent?.id ? 'skipped' : oppBid ? 'locked' : 'thinking...'}
             </div>
             <div className="mg-timer-bar">
               <div className="mg-timer-fill" style={{ width: `${state ? (phaseTimer / (state.phaseDurationMs / 1000)) * 100 : 0}%` }} />
@@ -463,9 +494,22 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
             <div className="mg-perf-timer">{Math.ceil(phaseTimer)}s</div>
 
-            {/* My input section */}
-            {!myDone ? (
+            {/* Skipper sits out — no input UI shown */}
+            {state?.roundSkipperId === sock.myId ? (
+              <div className="mg-skip-waiting">
+                <div className="mg-eyebrow">You skipped this round</div>
+                <h3 className="mg-h2">
+                  {opponent?.name ?? 'Opponent'} must hit {oppBid} or you win
+                </h3>
+                <p className="mg-tag">They're on the clock now...</p>
+              </div>
+            ) : !myDone ? (
               <>
+                {state?.roundSkipperId === opponent?.id && (
+                  <div className="mg-skip-callout">
+                    Skip pressure: name <strong>all {myBid}</strong> answers to win — anything less, opponent steals the round
+                  </div>
+                )}
                 {!useText && voice.supported ? (
                   <div className="mg-voice-section">
                     <div className={`mg-mic ${voice.listening ? 'on' : ''}`}>
@@ -474,9 +518,6 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                     </div>
                     {voice.interim && <div className="mg-interim">{voice.interim}</div>}
                     {voice.error && <div className="mg-error">{voice.error}</div>}
-                    <button className="mg-switch" onClick={() => { voice.stop(); setUseText(true); }}>
-                      Switch to typing
-                    </button>
                   </div>
                 ) : (
                   <div className="mg-text-section">
@@ -496,11 +537,32 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                     {typePreview === 'no-match' && typedAnswer.trim().length > 1 && (
                       <div className="mg-type-preview no-match">Not on the list...</div>
                     )}
-                    {!voice.supported ? null : (
-                      <button className="mg-switch" onClick={() => { setUseText(false); voice.start(); }}>
-                        Switch to mic
-                      </button>
-                    )}
+                  </div>
+                )}
+
+                {/* Always-visible input mode toggle — prevents user from
+                    looking for "back" when they really wanted to switch */}
+                {voice.supported && (
+                  <div className="mg-input-toggle">
+                    <button
+                      className={`mg-toggle-pill ${!useText ? 'active' : ''}`}
+                      onClick={() => {
+                        try {
+                          setUseText(false);
+                          if (voice.permission === 'granted') voice.start();
+                          else voice.ensurePermission().then(p => { if (p === 'granted') voice.start(); });
+                        } catch (e) { console.warn('voice start failed', e); }
+                      }}
+                      type="button"
+                    >🎤 Voice</button>
+                    <button
+                      className={`mg-toggle-pill ${useText ? 'active' : ''}`}
+                      onClick={() => {
+                        try { voice.stop(); } catch (e) { console.warn('voice stop failed', e); }
+                        setUseText(true);
+                      }}
+                      type="button"
+                    >⌨️ Type</button>
                   </div>
                 )}
 
@@ -508,8 +570,9 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                   {myLiveJudged.length === 0 && <li className="mg-ans-empty">your answers appear here</li>}
                   {[...myLiveJudged].reverse().map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status} mg-ans-slide`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '=' : 'x'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
                       <span>{j.raw}</span>
+                      {j.status === 'duplicate' && <span className="mg-ans-note">already said</span>}
                     </li>
                   ))}
                 </ul>
@@ -556,7 +619,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                 <ul className="mg-answers small">
                   {(myLastResult?.judged ?? []).map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status}`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '=' : 'x'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
                       <span>{j.raw}</span>
                     </li>
                   ))}
@@ -567,7 +630,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                 <ul className="mg-answers small">
                   {(oppLastResult?.judged ?? []).map((j, i) => (
                     <li key={i} className={`mg-ans ${j.status}`}>
-                      <span className="mg-ans-mark">{j.status === 'valid' ? '+' : j.status === 'duplicate' ? '=' : 'x'}</span>
+                      <span className="mg-ans-mark">{j.status === 'valid' ? '✓' : j.status === 'duplicate' ? '↻' : '✗'}</span>
                       <span>{j.raw}</span>
                     </li>
                   ))}
@@ -634,6 +697,20 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
           </div>
         )}
       </div>
+
+      {/* Confirm-leave modal — prevents accidental "Back" mid-game */}
+      {confirmExit && (
+        <div className="mg-modal-overlay" onClick={() => setConfirmExit(false)}>
+          <div className="mg-modal" onClick={e => e.stopPropagation()}>
+            <h2 className="mg-h2">Leave the match?</h2>
+            <p className="mg-tag">Your opponent will see you disconnected. The match ends.</p>
+            <div className="mg-row">
+              <button className="mg-secondary" onClick={() => setConfirmExit(false)}>Keep playing</button>
+              <button className="mg-cta-danger" onClick={() => { setConfirmExit(false); exitAndLeave(); }}>Leave match</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
