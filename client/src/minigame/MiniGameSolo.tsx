@@ -8,6 +8,7 @@ import {
   validCount,
 } from './categories';
 import { useVoice } from './useVoice';
+import { useSound } from './useSound';
 import {
   type Difficulty,
   DIFFICULTY_LABEL,
@@ -104,6 +105,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
   const [playerDone, setPlayerDone] = useState(false);
 
   const voice = useVoice();
+  const sfx = useSound();
   const [typedAnswer, setTypedAnswer] = useState('');
   const [useText, setUseText] = useState(() => {
     if (!voice.supported) return true;
@@ -195,6 +197,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     phaseStartedAt.current = Date.now();
     setTimer(seconds);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (p === 'reveal') sfx.play('reveal');
   };
 
   useEffect(() => {
@@ -252,7 +255,37 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     };
   }, [phase, cpuPlan, difficulty]);
 
-  const lockBid = () => setPlayerLocked(true);
+  const lockBid = () => { setPlayerLocked(true); sfx.play('bidLock'); };
+
+  // Play sound on new judged items during solo performing
+  const prevJudgedCountRef = useRef(0);
+  useEffect(() => {
+    if (phase !== 'performing' || !category) { prevJudgedCountRef.current = 0; return; }
+    const j = judge(category, voice.items);
+    if (j.length > prevJudgedCountRef.current) {
+      const newOnes = j.slice(prevJudgedCountRef.current);
+      for (const it of newOnes) {
+        if (it.status === 'valid') sfx.play('correct');
+        else if (it.status === 'duplicate') sfx.play('duplicate');
+        else sfx.play('wrong');
+      }
+    }
+    prevJudgedCountRef.current = j.length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.items.length, phase, category]);
+
+  // Tick on last 3 seconds
+  const lastTickRef = useRef(0);
+  useEffect(() => {
+    if (phase !== 'bidding' && phase !== 'performing') return;
+    const sec = Math.ceil(timer);
+    if (sec > 0 && sec <= 3 && sec !== lastTickRef.current) {
+      lastTickRef.current = sec;
+      sfx.play('tick');
+    }
+    if (sec > 3) lastTickRef.current = 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timer, phase]);
 
   // Auto-lock bid when timer runs out
   useEffect(() => {
@@ -273,7 +306,17 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     if (cpuTimerRef.current) window.clearTimeout(cpuTimerRef.current);
     if (!category) return;
 
-    const playerJudged = judge(category, voice.items);
+    // Cap attempts at bid: only the first `bid` non-duplicate items count
+    const allJudged = judge(category, voice.items);
+    const playerJudged: typeof allJudged = [];
+    let attemptsUsed = 0;
+    for (const j of allJudged) {
+      if (j.status !== 'duplicate') {
+        if (attemptsUsed >= playerBid) break;
+        attemptsUsed += 1;
+      }
+      playerJudged.push(j);
+    }
     const playerValid = validCount(playerJudged);
     const playerPct = playerValid / Math.max(1, playerBid);
 
@@ -281,11 +324,15 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     const cpuValid = plan.finalValid;
     const cpuPct = cpuValid / Math.max(1, cpuBid);
 
-    // Higher percentage wins; ties go to lower bidder
+    // Higher percentage wins; tie → higher valid count; tie → lower bidder
     let winner: 'player' | 'cpu';
     if (playerPct > cpuPct) winner = 'player';
     else if (cpuPct > playerPct) winner = 'cpu';
+    else if (playerValid > cpuValid) winner = 'player';
+    else if (cpuValid > playerValid) winner = 'cpu';
     else winner = playerBid <= cpuBid ? 'player' : 'cpu';
+
+    sfx.play(winner === 'player' ? 'roundWin' : 'roundLose');
 
     const round: Round = {
       category,
@@ -315,6 +362,7 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     const pw = history.filter(r => r.winner === 'player').length;
     const cw = history.filter(r => r.winner === 'cpu').length;
     if (pw >= winsNeeded || cw >= winsNeeded) {
+      sfx.play(pw > cw ? 'matchWin' : 'matchLose');
       setPhase('matchOver');
     } else {
       startRound(roundIdx + 1, history);
@@ -333,7 +381,15 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     <div className="mg-root" ref={rootRef}>
       {/* ── Prominent scoreboard topbar ── */}
       <div className="mg-topbar mg-topbar-score">
-        <button className="mg-back" onClick={onExit}>Back</button>
+        <div className="mg-topbar-left">
+          <button className="mg-back" onClick={onExit}>Back</button>
+          <button
+            className="mg-sound-toggle"
+            onClick={() => { sfx.toggle(); }}
+            aria-label="Toggle sound"
+            title="Toggle sound"
+          >🔊</button>
+        </div>
 
         <div className="mg-scoreboard">
           <div className={`mg-score-side ${leading === 'player' ? 'leading' : ''}`}>

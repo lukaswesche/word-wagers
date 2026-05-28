@@ -3473,6 +3473,26 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   background: rgba(255,255,255,0.08);
 }
 
+/* Topbar-left container (Leave + sound) */
+.mg-topbar-left {
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.mg-sound-toggle {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--clr-text);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.mg-sound-toggle:hover {
+  background: rgba(255,255,255,0.1);
+  transform: scale(1.05);
+}
+
 /* Reveal phase ---------------------------------------------------- */
 .mg-prompt { line-height: 1.2; max-width: 600px; }
 .mg-countdown.big {

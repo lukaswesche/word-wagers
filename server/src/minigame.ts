@@ -270,7 +270,7 @@ const BEST_OF = 3;
 const REVEAL_MS = 3000;
 const BID_MS = 8000;
 const BID_REVEAL_MS = 2000;
-const PERFORM_MS = 25000;
+const PERFORM_MS = 55000; // more time for players to think + speak
 const RESULT_AUTO_MS = 0; // 0 = wait for client click; set to e.g. 15000 for auto-continue
 const RECONNECT_GRACE_MS = 30000;
 
@@ -467,12 +467,18 @@ function finishRound(room: MGRoom, emit: () => void) {
     const challengerValid = results[challengerId].validCount;
     winnerId = (challengerValid >= challengerBid) ? challengerId : skipperId;
   } else {
-    // Normal mode: higher percentage wins; ties → lower bidder.
+    // Normal mode: higher percentage wins.
+    // Tie-break 1: higher raw valid count (the absolute amount of correct answers)
+    // Tie-break 2: lower bidder (more conservative play)
     const r1 = results[p1.playerId];
     const r2 = results[p2.playerId];
     if (r1.pct > r2.pct) {
       winnerId = p1.playerId;
     } else if (r2.pct > r1.pct) {
+      winnerId = p2.playerId;
+    } else if (r1.validCount > r2.validCount) {
+      winnerId = p1.playerId;
+    } else if (r2.validCount > r1.validCount) {
       winnerId = p2.playerId;
     } else {
       const b1 = room.bids[p1.playerId] ?? 1;
@@ -480,6 +486,9 @@ function finishRound(room: MGRoom, emit: () => void) {
       winnerId = b1 <= b2 ? p1.playerId : p2.playerId;
     }
   }
+
+  // CRITICAL: actually increment the score. This was missing → matches never ended.
+  room.scores[winnerId] = (room.scores[winnerId] ?? 0) + 1;
 
   const record: RoundRecord = {
     categoryId: room.category.id,
@@ -841,14 +850,31 @@ export function registerMiniGame(io: Server) {
       if (!room.category || !room.performing) return ack?.({ ok: false, error: 'Bad state' });
       const slot = room.performing[playerId];
       if (!slot || slot.done) return ack?.({ ok: true }); // locked in, ignore
+      const bid = room.bids[playerId] ?? 1;
       const items = Array.isArray(payload?.items) ? payload.items : [];
       for (const raw of items) {
+        // Stop accepting once attempts used up (valid + invalid; duplicates don't count)
+        const attemptsUsed = slot.judged.filter(j => j.status !== 'duplicate').length;
+        if (attemptsUsed >= bid) { slot.done = true; break; }
         const s = String(raw ?? '').trim();
         if (!s) continue;
         // judgeItemSmart can return MULTIPLE items when fast speech merged
         // several answers into one phrase (e.g. "spider man iron man hulk")
         const judgedItems = judgeItemSmart(room.category, s, slot.seen);
-        for (const j of judgedItems) slot.judged.push(j);
+        for (const j of judgedItems) {
+          slot.judged.push(j);
+          // After each push, check attempts again (a multi-word phrase could overflow)
+          const used = slot.judged.filter(x => x.status !== 'duplicate').length;
+          if (used >= bid) { slot.done = true; break; }
+        }
+        if (slot.done) break;
+      }
+      // Auto-finish round if both players are done
+      if (slot.done) {
+        const allDone = room.players.every(p =>
+          p.playerId === room.roundSkipperId || room.performing?.[p.playerId]?.done
+        );
+        if (allDone) finishRound(room, () => emitState(room.code));
       }
       emitState(room.code);
       ack?.({ ok: true });
@@ -869,8 +895,21 @@ export function registerMiniGame(io: Server) {
       if (!slot || slot.done) return ack?.({ ok: true });
       const raw = String(payload?.item ?? '').trim();
       if (!raw) return ack?.({ ok: true });
+      const bid = room.bids[playerId] ?? 1;
+      const attemptsUsedBefore = slot.judged.filter(j => j.status !== 'duplicate').length;
+      if (attemptsUsedBefore >= bid) { slot.done = true; emitState(room.code); return ack?.({ ok: true }); }
       const judgedItems = judgeItemSmart(room.category, raw, slot.seen);
-      for (const j of judgedItems) slot.judged.push(j);
+      for (const j of judgedItems) {
+        slot.judged.push(j);
+        const used = slot.judged.filter(x => x.status !== 'duplicate').length;
+        if (used >= bid) { slot.done = true; break; }
+      }
+      if (slot.done) {
+        const allDone = room.players.every(p =>
+          p.playerId === room.roundSkipperId || room.performing?.[p.playerId]?.done
+        );
+        if (allDone) finishRound(room, () => emitState(room.code));
+      }
       emitState(room.code);
       ack?.({ ok: true });
     });

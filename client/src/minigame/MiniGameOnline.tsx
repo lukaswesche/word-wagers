@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVoice } from './useVoice';
+import { useSound } from './useSound';
 import { useMiniGameSocket, type MGSnapshot } from './useMiniGameSocket';
 import CATEGORIES from './data/mg-categories.json';
 
@@ -38,6 +39,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
   const [scoreFlash, setScoreFlash] = useState<{ [pid: string]: boolean }>({});
 
   const voice = useVoice();
+  const sfx = useSound();
   const [typedAnswer, setTypedAnswer] = useState('');
   // Default to text if voice unsupported OR user previously chose text mode
   const [useText, setUseText] = useState(() => {
@@ -101,8 +103,10 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
   useEffect(() => {
     if (lastPhaseRef.current === phase) return;
+    const prevPhase = lastPhaseRef.current;
     lastPhaseRef.current = phase;
 
+    if (phase === 'reveal') sfx.play('reveal');
     if (phase === 'bidding') {
       setPlayerLocked(false);
       setPlayerBid(5);
@@ -115,6 +119,20 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
       if (!useText && voice.supported) voice.start();
     } else {
       voice.stop();
+    }
+    // Round/match result sounds: fire on entering result/matchOver
+    if (phase === 'result' && prevPhase !== 'result') {
+      const last = state?.history[state.history.length - 1];
+      if (last) {
+        if (last.winnerId === sock.myId) sfx.play('roundWin');
+        else sfx.play('roundLose');
+      }
+    }
+    if (phase === 'matchOver' && prevPhase !== 'matchOver') {
+      const myScoreNow = state?.scores[sock.myId] ?? 0;
+      const oppScoreNow = opponent ? (state?.scores[opponent.id] ?? 0) : 0;
+      if (myScoreNow > oppScoreNow) sfx.play('matchWin');
+      else sfx.play('matchLose');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -260,7 +278,38 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
   const lockBid = () => {
     sock.placeBid(playerBid);
     setPlayerLocked(true);
+    sfx.play('bidLock');
   };
+
+  // Play sound when new judged items appear in my own slot
+  const prevJudgedCountRef = useRef(0);
+  useEffect(() => {
+    if (phase !== 'performing') { prevJudgedCountRef.current = 0; return; }
+    const arr = mySlot?.judged ?? [];
+    if (arr.length > prevJudgedCountRef.current) {
+      const newOnes = arr.slice(prevJudgedCountRef.current);
+      for (const j of newOnes) {
+        if (j.status === 'valid') sfx.play('correct');
+        else if (j.status === 'duplicate') sfx.play('duplicate');
+        else sfx.play('wrong');
+      }
+    }
+    prevJudgedCountRef.current = arr.length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mySlot?.judged?.length, phase]);
+
+  // Timer tick: last 3 seconds of bidding/performing
+  const lastTickRef = useRef(0);
+  useEffect(() => {
+    if (phase !== 'bidding' && phase !== 'performing') return;
+    const sec = Math.ceil(phaseTimer);
+    if (sec > 0 && sec <= 3 && sec !== lastTickRef.current) {
+      lastTickRef.current = sec;
+      sfx.play('tick');
+    }
+    if (sec > 3) lastTickRef.current = 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phaseTimer, phase]);
 
   if (localError) {
     return (
@@ -285,7 +334,15 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
     <div className="mg-root">
       {/* ── Prominent scoreboard topbar ── */}
       <div className="mg-topbar mg-topbar-score">
-        <button className="mg-back" onClick={handleBackClick} aria-label="Leave match">Leave</button>
+        <div className="mg-topbar-left">
+          <button className="mg-back" onClick={handleBackClick} aria-label="Leave match">Leave</button>
+          <button
+            className="mg-sound-toggle"
+            onClick={() => { sfx.toggle(); }}
+            aria-label="Toggle sound"
+            title="Toggle sound"
+          >🔊</button>
+        </div>
 
         <div className="mg-scoreboard">
           {/* My side */}
