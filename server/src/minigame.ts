@@ -507,6 +507,13 @@ function finishRound(room: MGRoom, emit: () => void) {
   // CRITICAL: actually increment the score. This was missing → matches never ended.
   room.scores[winnerId] = (room.scores[winnerId] ?? 0) + 1;
 
+  // Successful skip refund: if the skipper won this round (opponent failed to
+  // hit their bid), give the skip back. The skipper "called the bluff" so
+  // their skip wasn't wasted.
+  if (room.roundSkipperId && winnerId === room.roundSkipperId) {
+    room.skipsUsed[winnerId] = Math.max(0, (room.skipsUsed[winnerId] ?? 0) - 1);
+  }
+
   const record: RoundRecord = {
     categoryId: room.category.id,
     short: room.category.short,

@@ -691,6 +691,24 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
               {lastRound.winnerId === sock.myId ? 'You win the round' : `${opponent?.name ?? 'Opponent'} wins`}
             </h2>
 
+            {/* Skip refund celebration / penalty notice */}
+            {lastRound.skipperId && (
+              <div className={`mg-skip-result ${lastRound.skipperId === lastRound.winnerId ? 'won' : 'lost'}`}>
+                {lastRound.skipperId === sock.myId && lastRound.winnerId === sock.myId && (
+                  <>Your skip paid off — <strong>skip returned!</strong></>
+                )}
+                {lastRound.skipperId === sock.myId && lastRound.winnerId !== sock.myId && (
+                  <>Your skip didn't land — opponent hit their bid.</>
+                )}
+                {lastRound.skipperId === opponent?.id && lastRound.winnerId === opponent?.id && (
+                  <>{opponent?.name ?? 'Opponent'} called your bluff — their skip returned.</>
+                )}
+                {lastRound.skipperId === opponent?.id && lastRound.winnerId !== opponent?.id && (
+                  <>You hit your bid — {opponent?.name ?? 'opponent'}'s skip was burned.</>
+                )}
+              </div>
+            )}
+
             {/* Percentage comparison */}
             {myLastResult && oppLastResult && (
               <div className="mg-pct-compare">
