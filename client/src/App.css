@@ -3359,6 +3359,37 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   max-width: 320px; margin-inline: auto;
 }
 
+/* Input mode preference (mic vs type) */
+.mg-input-pref {
+  margin-top: 1rem; padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  text-align: center;
+}
+.mg-input-pref-label {
+  font-size: 0.7rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--clr-sub);
+  margin-bottom: 0.5rem;
+}
+.mg-input-pref-row {
+  display: flex; gap: 0.5rem; justify-content: center;
+}
+.mg-pref-btn {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+  color: var(--clr-text); border-radius: 8px; padding: 0.55rem 1rem;
+  font-size: 0.9rem; cursor: pointer; transition: all 0.15s;
+  min-width: 100px;
+}
+.mg-pref-btn:hover { background: rgba(255,255,255,0.08); }
+.mg-pref-btn.active {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent);
+}
+.mg-pref-warn { color: #f87171; font-size: 0.75rem; }
+.mg-pref-hint {
+  font-size: 0.75rem; color: var(--clr-sub);
+  margin-top: 0.5rem;
+}
+
 /* Reveal phase ---------------------------------------------------- */
 .mg-prompt { line-height: 1.2; max-width: 600px; }
 .mg-countdown.big {

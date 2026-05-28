@@ -1,4 +1,6 @@
 import { Component, useEffect, useState, type ReactNode } from 'react';
+import { socket } from '../socket';
+import { getOrCreatePlayerId } from '../playerId';
 import MiniGameSolo from './MiniGameSolo';
 import MiniGameOnline from './MiniGameOnline';
 import { type Difficulty, DIFFICULTY_LABEL } from './difficulty';
@@ -42,29 +44,51 @@ class GameErrorBoundary extends Component<EBProps, EBState> {
 type View =
   | { kind: 'lobby' }
   | { kind: 'solo'; difficulty: Difficulty }
-  | { kind: 'online'; mode: 'create' | 'join'; name: string; code?: string };
+  // 'rejoin' = server-side auto-recovery after refresh (no create/join needed)
+  | { kind: 'online'; mode: 'create' | 'join' | 'rejoin'; name: string; code?: string };
 
 type Props = { onExit: () => void };
 
 export default function MiniGameApp({ onExit }: Props) {
-  // Restore an in-progress online game after a page refresh
-  const [view, setView] = useState<View>(() => {
-    try {
-      const saved = sessionStorage.getItem('mg:session');
-      if (saved) {
-        const { code, name } = JSON.parse(saved) as { code: string; name: string };
-        if (code && name) return { kind: 'online', mode: 'join', name, code };
-      }
-    } catch { /* ignore */ }
-    return { kind: 'lobby' };
-  });
+  const [view, setView] = useState<View>({ kind: 'lobby' });
+
+  // Server-driven refresh recovery: send hello, then if we receive an mg-state
+  // event while still in the lobby, switch to online view in 'rejoin' mode.
+  // Mirrors the main game's pattern where 'room-state' arriving on hello
+  // automatically transitions the user into their game.
+  useEffect(() => {
+    const playerId = getOrCreatePlayerId();
+    if (!socket.connected) {
+      socket.connect();
+      const onConnect = () => socket.emit('hello', { playerId });
+      socket.on('connect', onConnect);
+      return () => { socket.off('connect', onConnect); };
+    }
+    socket.emit('hello', { playerId });
+  }, []);
+
+  useEffect(() => {
+    // Switch from lobby to in-game if the server tells us we're in a room.
+    // (Only when in lobby — otherwise MiniGameOnline owns the state.)
+    const onMGState = (s: { code: string; players: { id: string; name: string }[] }) => {
+      setView(prev => {
+        if (prev.kind !== 'lobby') return prev;
+        const me = s.players.find(p => p.id === getOrCreatePlayerId());
+        return { kind: 'online', mode: 'rejoin', name: me?.name ?? 'Player', code: s.code };
+      });
+    };
+    socket.on('mg-state', onMGState);
+    return () => { socket.off('mg-state', onMGState); };
+  }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [view.kind]);
 
   const toLobby = () => {
-    try { sessionStorage.removeItem('mg:session'); } catch { /* ignore */ }
+    // Always leave server-side when intentionally going back to lobby so the
+    // auto-rejoin listener below doesn't immediately yank us back into the room.
+    try { socket.emit('mg-leave', {}); } catch { /* ignore */ }
     setView({ kind: 'lobby' });
   };
 
@@ -88,13 +112,7 @@ export default function MiniGameApp({ onExit }: Props) {
     );
   }
 
-  return <Lobby onExit={onExit} onStart={(v) => {
-    // Persist online sessions so a page refresh re-joins automatically
-    if (v.kind === 'online' && v.code) {
-      try { sessionStorage.setItem('mg:session', JSON.stringify({ code: v.code, name: v.name })); } catch { /* ignore */ }
-    }
-    setView(v);
-  }} />;
+  return <Lobby onExit={onExit} onStart={setView} />;
 }
 
 // ───────────── Lobby ─────────────

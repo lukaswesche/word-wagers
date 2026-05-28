@@ -19,7 +19,8 @@ function normalizeAnswer(s: string): string {
 
 type Props = {
   onExit: () => void;
-  initialMode: 'create' | 'join';
+  // 'rejoin' = server already has us in a room (after refresh); skip create/join
+  initialMode: 'create' | 'join' | 'rejoin';
   initialName: string;
   initialCode?: string;
 };
@@ -38,8 +39,20 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
 
   const voice = useVoice();
   const [typedAnswer, setTypedAnswer] = useState('');
-  // Default to text if voice unsupported (includes http:// non-localhost)
-  const [useText, setUseText] = useState(!voice.supported);
+  // Default to text if voice unsupported OR user previously chose text mode
+  const [useText, setUseText] = useState(() => {
+    if (!voice.supported) return true;
+    try {
+      const saved = localStorage.getItem('mg:inputMode');
+      if (saved === 'text') return true;
+      if (saved === 'voice') return false;
+    } catch { /* ignore */ }
+    return !voice.supported;
+  });
+  // Persist choice
+  useEffect(() => {
+    try { localStorage.setItem('mg:inputMode', useText ? 'text' : 'voice'); } catch { /* ignore */ }
+  }, [useText]);
   const httpWarning = !voice.supported &&
     typeof window !== 'undefined' &&
     window.location.protocol === 'http:' &&
@@ -47,35 +60,28 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
   const [myDone, setMyDone] = useState(false);
   const [typePreview, setTypePreview] = useState<'match' | 'no-match' | null>(null);
 
-  // ── join on connect (also handles re-join after page refresh) ──
+  // ── create/join on connect (skip if rejoin — server already has us) ──
   useEffect(() => {
     if (!sock.connected || joined) return;
+    if (initialMode === 'rejoin') {
+      // Server-driven recovery: hello already sent by parent, state will arrive.
+      setJoined(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const res = initialMode === 'create'
         ? await sock.create(initialName)
         : await sock.join(initialCode ?? '', initialName);
       if (cancelled) return;
-      if (!res.ok) {
-        // If re-join after refresh fails (room expired), drop back to lobby
-        try { sessionStorage.removeItem('mg:session'); } catch { /* ignore */ }
-        setLocalError(res.error);
-      } else {
-        setJoined(true);
-        setLocalError(null);
-      }
+      if (!res.ok) setLocalError(res.error);
+      else { setJoined(true); setLocalError(null); }
     })();
     return () => { cancelled = true; };
   }, [sock.connected, joined, initialMode, initialName, initialCode, sock]);
 
   const state = sock.state;
   const phase = state?.phase ?? 'waiting';
-
-  // ── persist session once we have a room code (needed for host who doesn't know code at create time) ──
-  useEffect(() => {
-    if (!state?.code) return;
-    try { sessionStorage.setItem('mg:session', JSON.stringify({ code: state.code, name: initialName })); } catch { /* ignore */ }
-  }, [state?.code, initialName]);
 
   // Score flash animation when scores change
   useEffect(() => {
@@ -191,7 +197,6 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
   }, [typedAnswer, state?.category]);
 
   const exitAndLeave = useCallback(() => {
-    try { sessionStorage.removeItem('mg:session'); } catch { /* ignore */ }
     sock.leave();
     onExit();
   }, [sock, onExit]);
@@ -351,6 +356,33 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
             {httpWarning && (
               <div className="mg-http-warning">
                 Voice input requires HTTPS. Text input will be used instead.
+              </div>
+            )}
+            {voice.supported && !httpWarning && (
+              <div className="mg-input-pref">
+                <div className="mg-input-pref-label">Input mode</div>
+                <div className="mg-input-pref-row">
+                  <button
+                    className={`mg-pref-btn ${!useText ? 'active' : ''}`}
+                    onClick={async () => {
+                      const p = await voice.ensurePermission();
+                      if (p === 'granted') setUseText(false);
+                      else if (p === 'denied') setUseText(true);
+                    }}
+                  >
+                    🎤 Voice
+                    {voice.permission === 'denied' && <span className="mg-pref-warn"> (blocked)</span>}
+                  </button>
+                  <button
+                    className={`mg-pref-btn ${useText ? 'active' : ''}`}
+                    onClick={() => setUseText(true)}
+                  >
+                    ⌨️ Type
+                  </button>
+                </div>
+                {voice.permission === 'denied' && (
+                  <div className="mg-pref-hint">Unblock the mic in your browser settings to use voice</div>
+                )}
               </div>
             )}
           </div>
