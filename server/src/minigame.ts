@@ -120,28 +120,61 @@ function variants(answer: string | string[]): string[] {
 type ItemStatus = 'valid' | 'invalid' | 'duplicate';
 type JudgedItem = { raw: string; status: ItemStatus };
 
-// Build a lookup index ONCE per category for O(1) matches
-// (Map<normalizedAnswer, answerIndex>)
-const categoryIndexCache = new WeakMap<CategoryRaw, Map<string, number>>();
-function getCategoryIndex(cat: CategoryRaw): Map<string, number> {
+// Build TWO lookups per category:
+//  - exact: normalized answer → index (O(1) exact match)
+//  - prefix tokens: first 1-2 words of each variant → list of indices (for
+//    forgiving matching like "iron man" → "Iron Man 3"; "stranger" → "Stranger Things")
+// Both cached per category.
+type CatIndex = { exact: Map<string, number>; prefix: Map<string, number[]> };
+const categoryIndexCache = new WeakMap<CategoryRaw, CatIndex>();
+
+function getCategoryIndex(cat: CategoryRaw): CatIndex {
   let idx = categoryIndexCache.get(cat);
   if (idx) return idx;
-  idx = new Map();
+  const exact = new Map<string, number>();
+  const prefix = new Map<string, number[]>();
+  const addPrefix = (key: string, i: number) => {
+    if (key.length < 3) return; // skip tiny prefixes like "a", "of"
+    let arr = prefix.get(key);
+    if (!arr) { arr = []; prefix.set(key, arr); }
+    if (!arr.includes(i)) arr.push(i);
+  };
   for (let i = 0; i < cat.answers.length; i++) {
     for (const v of variants(cat.answers[i])) {
-      if (!idx.has(v)) idx.set(v, i);
+      if (!exact.has(v)) exact.set(v, i);
+      // Add forgiving prefix entries — only useful for multi-word answers
+      const toks = v.split(/\s+/).filter(Boolean);
+      if (toks.length >= 2) {
+        addPrefix(toks[0], i);                          // first word
+        addPrefix(toks.slice(0, 2).join(' '), i);       // first two words
+        if (toks.length >= 3) addPrefix(toks.slice(0, 3).join(' '), i);
+      }
     }
   }
+  idx = { exact, prefix };
   categoryIndexCache.set(cat, idx);
   return idx;
 }
 
-// Single-phrase exact judge
+// Look up an answer with forgiving rules.
+//   1. Exact match
+//   2. Substring of unique canonical answer (e.g. "iron man" → "Iron Man 3")
+//      only matches if exactly ONE candidate (avoids ambiguity)
+function lookupAnswer(cat: CategoryRaw, normalizedInput: string): number | undefined {
+  const idx = getCategoryIndex(cat);
+  const exact = idx.exact.get(normalizedInput);
+  if (exact !== undefined) return exact;
+  // Try prefix lookup — only accept if it points to a UNIQUE answer
+  const prefixHits = idx.prefix.get(normalizedInput);
+  if (prefixHits && prefixHits.length === 1) return prefixHits[0];
+  return undefined;
+}
+
+// Single-phrase forgiving judge (exact OR unique-prefix match like "iron man" → "Iron Man 3")
 function judgeSingle(cat: CategoryRaw, raw: string, seen: Set<number>): JudgedItem | null {
   const n = normalize(raw);
   if (!n) return null;
-  const idx = getCategoryIndex(cat);
-  const match = idx.get(n);
+  const match = lookupAnswer(cat, n);
   if (match !== undefined) {
     if (seen.has(match)) return { raw, status: 'duplicate' };
     seen.add(match);
@@ -165,7 +198,6 @@ function judgeItemSmart(cat: CategoryRaw, raw: string, seen: Set<number>): Judge
   if (tokens.length <= 1) {
     return [{ raw, status: 'invalid' }];
   }
-  const idx = getCategoryIndex(cat);
   const out: JudgedItem[] = [];
   let cursor = 0;
   while (cursor < tokens.length) {
@@ -173,7 +205,7 @@ function judgeItemSmart(cat: CategoryRaw, raw: string, seen: Set<number>): Judge
     // Try longest prefix first (up to 6 words — most answers are <= 5)
     for (let len = Math.min(6, tokens.length - cursor); len >= 1; len--) {
       const sub = tokens.slice(cursor, cursor + len).join(' ');
-      const ansIdx = idx.get(sub);
+      const ansIdx = lookupAnswer(cat, sub);
       if (ansIdx !== undefined) { matched = { len, ansIdx }; break; }
     }
     if (matched) {
@@ -412,6 +444,25 @@ function setPhase(room: MGRoom, phase: MGPhase, durationMs: number, onExpire?: (
   }
 }
 
+// Ensure the current phase has at least `minMs` remaining. Used when one
+// player finishes early to grant the slower player breathing room without
+// pressuring them into a rushed final answer.
+function ensureMinTimeRemaining(room: MGRoom, minMs: number, onExpire: () => void, emit: () => void) {
+  if (!room.phaseTimer) return;
+  const elapsed = Date.now() - room.phaseStartedAt;
+  const remaining = room.phaseDurationMs - elapsed;
+  if (remaining >= minMs) return;
+  // Recompute new duration so client clock still works (phaseStartedAt + duration = end)
+  clearPhaseTimer(room);
+  const newDuration = elapsed + minMs;
+  room.phaseDurationMs = newDuration;
+  room.phaseTimer = setTimeout(() => {
+    room.phaseTimer = null;
+    onExpire();
+    emit();
+  }, minMs);
+}
+
 function newRound(room: MGRoom, emit: () => void, prevCatId: string | null) {
   room.category = pickCategory(prevCatId);
   room.bids = {};
@@ -477,12 +528,17 @@ function finishRound(room: MGRoom, emit: () => void) {
   let winnerId: string;
 
   if (room.roundSkipperId) {
-    // SKIP MODE: skipper wins unless opponent hit their bid in full.
+    // SKIP MODE (rebalanced): opponent wins by hitting MAJORITY of their bid.
+    //   - Was: must hit FULL bid (too punishing when random bid was high)
+    //   - Now: must hit >= 50% (rounded up) of their bid
+    // This makes skipping a "I bet you can't even half-do this" challenge
+    // rather than a "I bet you can't perfectly do this" guarantee.
     const skipperId = room.roundSkipperId;
     const challengerId = p1.playerId === skipperId ? p2.playerId : p1.playerId;
-    const challengerBid = room.bids[challengerId] ?? 1;
+    const challengerBid = Math.max(1, room.bids[challengerId] ?? 1);
     const challengerValid = results[challengerId].validCount;
-    winnerId = (challengerValid >= challengerBid) ? challengerId : skipperId;
+    const threshold = Math.ceil(challengerBid * 0.5); // half, rounded up
+    winnerId = (challengerValid >= threshold) ? challengerId : skipperId;
   } else {
     // Normal mode: WEIGHTED score wins (validCount * pct).
     // Tie-break 1: higher raw validCount
@@ -893,12 +949,13 @@ export function registerMiniGame(io: Server) {
         }
         if (slot.done) break;
       }
-      // Auto-finish round if both players are done
+      // Auto-finish round if both players are done; else grant grace time to other
       if (slot.done) {
         const allDone = room.players.every(p =>
           p.playerId === room.roundSkipperId || room.performing?.[p.playerId]?.done
         );
         if (allDone) finishRound(room, () => emitState(room.code));
+        else ensureMinTimeRemaining(room, 20_000, () => finishRound(room, () => emitState(room.code)), () => emitState(room.code));
       }
       emitState(room.code);
       ack?.({ ok: true });
@@ -933,6 +990,7 @@ export function registerMiniGame(io: Server) {
           p.playerId === room.roundSkipperId || room.performing?.[p.playerId]?.done
         );
         if (allDone) finishRound(room, () => emitState(room.code));
+        else ensureMinTimeRemaining(room, 20_000, () => finishRound(room, () => emitState(room.code)), () => emitState(room.code));
       }
       emitState(room.code);
       ack?.({ ok: true });
@@ -947,12 +1005,15 @@ export function registerMiniGame(io: Server) {
       if (!room.performing) return ack?.({ ok: true });
       const slot = room.performing[playerId];
       if (slot) slot.done = true;
-      // If all NON-SKIPPER players are done, finish early
+      // If all NON-SKIPPER players are done, finish early. Otherwise grant
+      // the slower player at least 20s grace so they're not rushed.
       const allDone = room.players.every(p =>
         p.playerId === room.roundSkipperId || room.performing?.[p.playerId]?.done
       );
       if (allDone) {
         finishRound(room, () => emitState(room.code));
+      } else {
+        ensureMinTimeRemaining(room, 20_000, () => finishRound(room, () => emitState(room.code)), () => emitState(room.code));
       }
       emitState(room.code);
       ack?.({ ok: true });

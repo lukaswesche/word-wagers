@@ -203,15 +203,32 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
   }, []);
 
   // Live text-mode preview: check typed answer against local category data
+  // using the same forgiving rules as the server (exact + unique prefix).
   useEffect(() => {
     if (!typedAnswer.trim() || !state?.category) { setTypePreview(null); return; }
     const cat = CAT_MAP.get(state.category.id);
     if (!cat) { setTypePreview(null); return; }
     const n = normalizeAnswer(typedAnswer);
-    const matches = cat.answers.some(a =>
+    // Exact match
+    const exact = cat.answers.some(a =>
       (Array.isArray(a) ? a : [a]).some(v => normalizeAnswer(v) === n)
     );
-    setTypePreview(matches ? 'match' : 'no-match');
+    if (exact) { setTypePreview('match'); return; }
+    // Prefix match: must point to exactly one unique answer
+    const prefixHits = new Set<number>();
+    for (let i = 0; i < cat.answers.length; i++) {
+      const vs = (Array.isArray(cat.answers[i]) ? cat.answers[i] : [cat.answers[i]]) as string[];
+      for (const v of vs) {
+        const toks = normalizeAnswer(v).split(/\s+/).filter(Boolean);
+        if (toks.length < 2) continue;
+        const p1 = toks[0];
+        const p2 = toks.slice(0, 2).join(' ');
+        const p3 = toks.slice(0, 3).join(' ');
+        if (n === p1 || n === p2 || n === p3) prefixHits.add(i);
+      }
+    }
+    if (prefixHits.size === 1) { setTypePreview('match'); return; }
+    setTypePreview('no-match');
   }, [typedAnswer, state?.category]);
 
   // Confirm before kicking the user out mid-match — this was the silent
@@ -488,14 +505,14 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
               <button className="mg-cta" onClick={lockBid}>Lock in</button>
             )}
 
-            {/* SKIP button — only show if user has skips left and hasn't already bid/skipped this round */}
+            {/* SKIP button — small/subtle so it's not misclicked */}
             {!playerLocked && !state?.roundSkipperId && (state?.skipsRemaining?.[sock.myId] ?? 0) > 0 && (
               <button
                 className="mg-skip-btn"
                 onClick={() => sock.skip()}
-                title="Skip this round — opponent must hit their bid in full or you win"
+                title="Skip this round — opponent must hit at least half their bid to win, otherwise you do"
               >
-                Skip round ({state?.skipsRemaining?.[sock.myId]} left)
+                skip ({state?.skipsRemaining?.[sock.myId]} left)
               </button>
             )}
 
@@ -526,7 +543,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                   </div>
                 </div>
                 <div className="mg-verdict mg-fade-in-late mg-verdict-warn">
-                  Hit all {myBid} or lose the round.
+                  Hit at least {Math.ceil(myBid * 0.5)} of {myBid} or lose the round.
                 </div>
               </>
             ) : state?.roundSkipperId === sock.myId ? (
@@ -544,7 +561,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
                   </div>
                 </div>
                 <div className="mg-verdict mg-fade-in-late">
-                  They need to hit {oppBid} — anything less and you win.
+                  They need to hit {Math.ceil(oppBid * 0.5)} of {oppBid} — less than that, you win.
                 </div>
               </>
             ) : (
@@ -596,7 +613,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
               <div className="mg-skip-waiting">
                 <div className="mg-eyebrow">You skipped this round</div>
                 <h3 className="mg-h2">
-                  {opponent?.name ?? 'Opponent'} must hit {oppBid} or you win
+                  {opponent?.name ?? 'Opponent'} must hit {Math.ceil(oppBid * 0.5)} of {oppBid} or you win
                 </h3>
                 <p className="mg-tag">They're on the clock now...</p>
               </div>
@@ -604,7 +621,7 @@ export default function MiniGameOnline({ onExit, initialMode, initialName, initi
               <>
                 {state?.roundSkipperId === opponent?.id && (
                   <div className="mg-skip-callout">
-                    Skip pressure: name <strong>all {myBid}</strong> answers to win — anything less, opponent steals the round
+                    Skip pressure: hit at least <strong>{Math.ceil(myBid * 0.5)} of {myBid}</strong> to win — below that, opponent steals the round
                   </div>
                 )}
                 {!useText && voice.supported ? (

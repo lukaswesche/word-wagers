@@ -3,6 +3,7 @@ import {
   type Category,
   type JudgedItem,
   judge,
+  lookupAnswerIndex,
   normalize,
   randomCategory,
   validCount,
@@ -124,17 +125,15 @@ export default function MiniGameSolo({ onExit, difficulty }: Props) {
     window.location.hostname !== 'localhost';
   const [typePreview, setTypePreview] = useState<'match' | 'no-match' | null>(null);
 
-  // Preview: check if typed text would match category
+  // Preview: forgiving check (exact or unique-prefix match)
   useEffect(() => {
     if (!typedAnswer.trim() || !category || typedAnswer.trim().length < 2) {
       setTypePreview(null);
       return;
     }
     const n = normalize(typedAnswer);
-    const matches = category.answers.some(a =>
-      (Array.isArray(a) ? a : [a]).some(v => normalize(v) === n)
-    );
-    setTypePreview(matches ? 'match' : 'no-match');
+    const matched = lookupAnswerIndex(category, n);
+    setTypePreview(matched !== undefined ? 'match' : 'no-match');
   }, [typedAnswer, category]);
 
   const prevScoresRef = useRef({ player: 0, cpu: 0 });
